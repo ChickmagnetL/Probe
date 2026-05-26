@@ -1,0 +1,179 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2563EB;
+  --color-on-primary: #FFFFFF;
+  --color-secondary: #3B82F6;
+  --color-on-secondary: #FFFFFF;
+  --color-accent: #475569;
+  --color-on-accent: #FFFFFF;
+  --color-background: #F8FAFC;
+  --color-foreground: #1E293B;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #1E293B;
+  --color-muted: #E9EFF8;
+  --color-muted-foreground: #64748B;
+  --color-border: #E2E8F0;
+  --color-destructive: #DC2626;
+  --color-on-destructive: #FFFFFF;
+  --color-ring: #2563EB;
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: #dbeafe;
+  color: #1e3a5f;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #d4d4d4;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a3a3a3;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out;
+}
+
+@keyframes spring-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+
+.animate-spring-bounce {
+  animation: spring-bounce 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.liquid-glass {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(255, 255, 255, 0.08) 40%,
+    rgba(255, 255, 255, 0.15) 60%,
+    rgba(255, 255, 255, 0.3) 100%
+  );
+  border: 0.5px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -0.5px 0 rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(40px) saturate(200%) brightness(1.1);
+  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(1.1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .liquid-glass {
+    transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.3s ease;
+  }
+  .liquid-glass:hover {
+    transform: scale(1.02);
+  }
+}
+
+.glass-subtle {
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .interactive {
+    transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  }
+
+  .interactive:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: 10px;
+  padding: 12px 18px;
+  min-height: 44px;
+  font-weight: 700;
+  box-shadow: 0 12px 28px rgba(71, 85, 105, 0.2);
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease;
+}
+
+.btn-primary:hover {
+  transform: scale(1.04);
+  box-shadow: 0 16px 36px rgba(71, 85, 105, 0.28);
+}
+
+.btn-primary:active {
+  transform: scale(0.95);
+  box-shadow: 0 4px 12px rgba(71, 85, 105, 0.2);
+  transition-duration: 80ms;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 12px 18px;
+  min-height: 44px;
+  font-weight: 700;
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease, background 200ms ease;
+}
+
+.btn-secondary:hover {
+  transform: scale(1.04);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.btn-secondary:active {
+  transform: scale(0.95);
+  box-shadow: none;
+  background: rgba(255, 255, 255, 0.5);
+  transition-duration: 80ms;
+}
+
+.btn-ghost {
+  @apply px-2.5 py-1.5 text-xs font-medium rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors;
+}

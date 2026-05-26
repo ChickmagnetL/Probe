@@ -1,0 +1,389 @@
+import { useRef, useEffect, useState, useCallback } from "react";
+import type { EventRow } from "../../ipc/types";
+import type { GraphData, GraphTurn, ChildSession } from "./graph-layout";
+import { buildGraphFromTurns, buildTurnsFromEvents } from "./graph-layout";
+import {
+  renderStaticLayer,
+  renderLabels,
+  renderDynamicOverlay,
+  renderLODLayer,
+  hitTest,
+  type RenderState,
+  type ViewportBounds,
+} from "./graph-renderer";
+import { createInteractionHandlers, type Transform } from "./graph-interaction";
+
+interface GraphCanvasProps {
+  graphTurns?: GraphTurn[];
+  events?: EventRow[];
+  childSessions?: ChildSession[];
+  selectedEventId: string | null;
+  onNodeClick: (eventId: string) => void;
+}
+
+function sizeCanvasToContainer(
+  canvas: HTMLCanvasElement,
+  container: HTMLElement,
+) {
+  const dpr = window.devicePixelRatio || 1;
+  const { width, height } = container.getBoundingClientRect();
+  canvas.style.width = width + "px";
+  canvas.style.height = height + "px";
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  const ctx = canvas.getContext("2d");
+  if (ctx) ctx.scale(dpr, dpr);
+}
+
+/** Compute world-space bounding box for graph data */
+function graphBounds(data: GraphData): { minX: number; minY: number; w: number; h: number } {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const n of data.nodes) {
+    const padX = n.radius + 80; // label text can extend ~60px beyond node
+    const padY = n.radius + 24; // label below node ~20px
+    if (n.x - padX < minX) minX = n.x - padX;
+    if (n.y - padY < minY) minY = n.y - padY;
+    if (n.x + padX > maxX) maxX = n.x + padX;
+    if (n.y + padY > maxY) maxY = n.y + padY;
+  }
+  return { minX, minY, w: maxX - minX, h: maxY - minY };
+}
+
+export function GraphCanvas({
+  graphTurns,
+  events,
+  childSessions,
+  selectedEventId,
+  onNodeClick,
+}: GraphCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dataRef = useRef<GraphData | null>(null);
+  const transformRef = useRef<Transform>({ x: 0, y: 0, k: 1 });
+  const [labelsVisible, setLabelsVisible] = useState(true);
+
+  // Hover via ref — no React re-render
+  const hoveredNodeIdRef = useRef<string | null>(null);
+
+  // Offscreen cache (world coordinates, no transform)
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cacheDirtyRef = useRef(true);
+  const cacheBoundsRef = useRef<{ minX: number; minY: number }>({ minX: 0, minY: 0 });
+
+  const dirtyRef = useRef(true);
+
+  // Stable refs for draw loop
+  const selectedEventIdRef = useRef(selectedEventId);
+  const labelsVisibleRef = useRef(labelsVisible);
+  selectedEventIdRef.current = selectedEventId;
+  labelsVisibleRef.current = labelsVisible;
+
+  // Build graph data
+  useEffect(() => {
+    const turns = graphTurns ?? (events ? buildTurnsFromEvents(events) : []);
+    if (turns.length === 0) {
+      dataRef.current = null;
+      dirtyRef.current = true;
+      cacheDirtyRef.current = true;
+      return;
+    }
+
+    const result = buildGraphFromTurns(turns, childSessions);
+    const newData: GraphData = {
+      nodes: result.nodes,
+      links: result.links,
+      nodeMap: result.nodeMap,
+      adjacencyMap: result.adjacencyMap,
+      spindles: result.spindles,
+    };
+
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (canvas && container) {
+      sizeCanvasToContainer(canvas, container);
+      // 自动居中
+      const bounds = graphBounds(newData);
+      const canvasRect = canvas.getBoundingClientRect();
+      const scaleX = canvasRect.width / (bounds.w + 120);
+      const scaleY = canvasRect.height / (bounds.h + 120);
+      const k = Math.min(scaleX, scaleY, 1);
+      const cx = bounds.minX + bounds.w / 2;
+      const cy = bounds.minY + bounds.h / 2;
+      transformRef.current = {
+        x: canvasRect.width / 2 - cx * k,
+        y: canvasRect.height / 2 - cy * k,
+        k,
+      };
+    } else {
+      transformRef.current = { x: 0, y: 0, k: 1 };
+    }
+    // 同时更新数据和标记脏，避免中间状态
+    dataRef.current = newData;
+    dirtyRef.current = true;
+    cacheDirtyRef.current = true;
+  }, [graphTurns, events, childSessions]);
+
+  // Invalidate cache on selection change
+  useEffect(() => {
+    cacheDirtyRef.current = true;
+    dirtyRef.current = true;
+  }, [selectedEventId]);
+
+  // Labels don't need cache rebuild, just repaint
+  useEffect(() => {
+    dirtyRef.current = true;
+  }, [labelsVisible]);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    const data = dataRef.current;
+    if (!canvas || !data) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const t = transformRef.current;
+    const hoveredNodeId = hoveredNodeIdRef.current;
+    const selectedNodeId = selectedEventIdRef.current;
+    const labelsVisible = labelsVisibleRef.current;
+
+    const viewport: ViewportBounds = {
+      x: -t.x / t.k,
+      y: -t.y / t.k,
+      w: rect.width / t.k,
+      h: rect.height / t.k,
+    };
+
+    // LOD mode: skip cache, render directly with culling
+    if (t.k < 0.3) {
+      const dpr = window.devicePixelRatio || 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const state: RenderState = {
+        transform: t,
+        hoveredNodeId,
+        selectedNodeId,
+        labelsVisible,
+      };
+      renderLODLayer(ctx, data, state, rect.width, rect.height, viewport);
+      return;
+    }
+
+    // Normal zoom: use offscreen cache
+    const dpr = window.devicePixelRatio || 1;
+    if (!offscreenCanvasRef.current) {
+      offscreenCanvasRef.current = document.createElement("canvas");
+    }
+    const offscreen = offscreenCanvasRef.current;
+
+    // Rebuild cache if dirty
+    if (cacheDirtyRef.current) {
+      const bounds = graphBounds(data);
+      cacheBoundsRef.current = { minX: bounds.minX, minY: bounds.minY };
+      const w = Math.ceil(bounds.w);
+      const h = Math.ceil(bounds.h);
+      offscreen.width = w * dpr;
+      offscreen.height = h * dpr;
+
+      const offCtx = offscreen.getContext("2d");
+      if (offCtx) {
+        offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        offCtx.clearRect(0, 0, w, h);
+        offCtx.translate(-bounds.minX, -bounds.minY);
+        renderStaticLayer(offCtx, data, selectedNodeId);
+      }
+      cacheDirtyRef.current = false;
+    }
+
+    // Blit cached image with current transform
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    // 绘制背景网格点
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.scale(t.k, t.k);
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.15)';
+    const gridSize = 30;
+    const startX = Math.floor((-t.x / t.k) / gridSize) * gridSize;
+    const startY = Math.floor((-t.y / t.k) / gridSize) * gridSize;
+    const endX = startX + rect.width / t.k + gridSize;
+    const endY = startY + rect.height / t.k + gridSize;
+    for (let x = startX; x < endX; x += gridSize) {
+      for (let y = startY; y < endY; y += gridSize) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.scale(t.k, t.k);
+    const cb = cacheBoundsRef.current;
+    ctx.drawImage(offscreen, 0, 0, offscreen.width, offscreen.height, cb.minX, cb.minY, offscreen.width / dpr, offscreen.height / dpr);
+    ctx.restore();
+
+    // Labels rendered directly on main canvas for crisp text
+    renderLabels(ctx, data, t, selectedNodeId, hoveredNodeId, labelsVisible, viewport);
+
+    // Dynamic hover overlay
+    renderDynamicOverlay(ctx, data, t, hoveredNodeId);
+  }, []);
+
+  useEffect(() => {
+    let rafId = 0;
+    const minFrameMs = 16; // ~60fps cap
+    let lastFrameTime = 0;
+
+    const tick = (now: number) => {
+      if (dirtyRef.current && now - lastFrameTime >= minFrameMs) {
+        dirtyRef.current = false;
+        lastFrameTime = now;
+        draw();
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [draw]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    function getViewport(): ViewportBounds | undefined {
+      const rect = canvas?.getBoundingClientRect();
+      if (!rect) return undefined;
+      const t = transformRef.current;
+      return {
+        x: -t.x / t.k,
+        y: -t.y / t.k,
+        w: rect.width / t.k,
+        h: rect.height / t.k,
+      };
+    }
+
+    return createInteractionHandlers(
+      canvas,
+      () => transformRef.current,
+      (t) => {
+        transformRef.current = t;
+        dirtyRef.current = true;
+      },
+      (mx, my) => {
+        const data = dataRef.current;
+        if (!data) return;
+        const node = hitTest(data.nodes, mx, my, transformRef.current, getViewport());
+        const newId = node?.id ?? null;
+        if (hoveredNodeIdRef.current !== newId) {
+          hoveredNodeIdRef.current = newId;
+          dirtyRef.current = true;
+        }
+        canvas.style.cursor = node ? "pointer" : "grab";
+      },
+      (mx, my) => {
+        const data = dataRef.current;
+        if (!data) return;
+        const node = hitTest(data.nodes, mx, my, transformRef.current, getViewport());
+        if (node) onNodeClick(node.eventId);
+      },
+    );
+  }, [onNodeClick]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+
+    const obs = new ResizeObserver(() => {
+      sizeCanvasToContainer(canvas, container);
+      dirtyRef.current = true;
+    });
+    obs.observe(container);
+    return () => obs.disconnect();
+  }, []);
+
+  const resetView = () => {
+    transformRef.current = { x: 0, y: 0, k: 1 };
+    dirtyRef.current = true;
+  };
+
+  return (
+    <div ref={containerRef} className="absolute inset-0 overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        className="absolute top-0 left-0"
+        style={{ cursor: "grab" }}
+      />
+
+      <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-auto absolute top-4 right-4 glass-card rounded-xl p-3">
+          <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">Legend</div>
+          <div className="flex flex-col gap-2 text-xs">
+            <LegendDot color="#3b82f6" label="Input (anchor)" />
+            <LegendDot color="#10b981" label="Output (anchor)" />
+            <LegendDot color="#f59e0b" label="Tool call" small />
+            <LegendDot color="#a855f7" label="Tool result" small />
+            <LegendDot color="#6b7280" label="Reasoning" small />
+          </div>
+        </div>
+
+        <div className="pointer-events-auto absolute left-4 bottom-4 glass-card rounded-xl p-0.5 flex gap-0.5">
+          <button
+            onClick={resetView}
+            className="btn-ghost flex items-center gap-1.5"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="1 4 1 10 7 10" />
+              <path d="M3.51 15a9 9 0 102.13-9.36L1 10" />
+            </svg>
+            Reset
+          </button>
+          <div className="w-px bg-border my-1" />
+          <button
+            onClick={() => setLabelsVisible((v) => !v)}
+            className="btn-ghost flex items-center gap-1.5"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              {labelsVisible ? (
+                <>
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </>
+              ) : (
+                <>
+                  <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+                  <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </>
+              )}
+            </svg>
+            {labelsVisible ? "Hide" : "Show"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LegendDot({
+  color,
+  label,
+  small,
+}: {
+  color: string;
+  label: string;
+  small?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-card-foreground">
+      <div
+        className={`rounded-full ${small ? "w-1.5 h-1.5" : "w-2.5 h-2.5"}`}
+        style={{ backgroundColor: color }}
+      />
+      <span className="text-xs font-medium">{label}</span>
+    </div>
+  );
+}

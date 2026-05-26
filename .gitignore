@@ -1,0 +1,29 @@
+# Frontend generated artifacts
+frontend/node_modules/
+frontend/dist/
+
+# Tauri generated artifacts and sidecars
+tauri/target/
+tauri/probe-engine-*
+
+# Python engine generated artifacts
+engine/dist/
+engine/build/
+__pycache__/
+*.pyc
+
+# Local databases
+probe.db
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# macOS
+.DS_Store
+
+# AI工程相关
+.agents
+.claude
+.codex
+.trellis
+AGENTS.md
