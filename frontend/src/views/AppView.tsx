@@ -82,6 +82,13 @@ export function AppView() {
     return () => clearTimeout(debounceRef.current);
   }, [search, sort, fetchSessions]);
 
+  // Listen for dev-mock data updates (browser mode dynamic import)
+  useEffect(() => {
+    const handler = () => fetchSessions();
+    window.addEventListener("dev-mock-updated", handler);
+    return () => window.removeEventListener("dev-mock-updated", handler);
+  }, [fetchSessions]);
+
   const sortedEvents = useMemo(() => {
     if (!detail?.events) return [];
     return [...detail.events].sort((a, b) => {
