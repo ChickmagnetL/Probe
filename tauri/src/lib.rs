@@ -12,6 +12,7 @@ pub fn run() {
             commands::engine_call::engine_call,
             commands::file_dialog::open_file_dialog,
             commands::app_state::app_info,
+            commands::read_raw_file::read_raw_file,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run application");

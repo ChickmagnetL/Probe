@@ -43,7 +43,7 @@ export function EventDetailOverlay({
   if (!shouldRender) return null;
 
   return (
-    <div className="absolute inset-0 z-50 flex pointer-events-none">
+    <div className="fixed inset-0 z-50 flex pointer-events-none">
       {/* Backdrop - pointer-events-none allows interaction with canvas underneath */}
       <div
         className={`flex-1 transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`}

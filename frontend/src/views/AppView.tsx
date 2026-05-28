@@ -1,10 +1,9 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { useSessionStore } from "../stores/session";
 import { useImportStore } from "../stores/import";
+import { usePanelStore } from "../stores/panel";
 import { SessionList } from "../components/session/SessionList";
-import { GraphCanvas } from "../components/graph/GraphCanvas";
-import { TimelineView } from "../components/timeline/TimelineView";
-import { ConversationView } from "../components/conversation/ConversationView";
+import { PanelContainer } from "../components/panel/PanelContainer";
 import { EmptyState } from "../components/shared/EmptyState";
 import { EventDetailOverlay } from "../components/shared/EventDetailOverlay";
 import { SkeletonLines } from "../components/shared/SkeletonLines";
@@ -57,8 +56,8 @@ export function AppView() {
     deleteSessions,
   } = useSessionStore();
   const openImportModal = useImportStore((s) => s.openModal);
-  const [overlayOpen, setOverlayOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'graph' | 'timeline' | 'conversation'>('graph');
+  const root = usePanelStore((s) => s.root);
+  const resetLayout = usePanelStore((s) => s.resetLayout);
 
   // FilterBar state
   const [search, setSearch] = useState("");
@@ -129,13 +128,16 @@ export function AppView() {
   }, [selectedEvent, toolPairMap]);
 
   const handleOverlayClose = () => {
-    setOverlayOpen(false);
     selectEvent(null);
   };
 
-  const handleSessionSelect = (sessionId: string) => {
-    fetchDetail(sessionId);
-  };
+  const handleSessionSelect = useCallback(
+    (sessionId: string) => {
+      fetchDetail(sessionId);
+      resetLayout();
+    },
+    [fetchDetail, resetLayout],
+  );
 
   const selectedCount = selectedIds.size;
 
@@ -158,96 +160,14 @@ export function AppView() {
   return (
     <ErrorBoundary>
     <div className="relative flex h-screen overflow-hidden bg-background">
-      {/* Left: Graph canvas */}
-      <main className="flex-1 min-w-0 flex flex-col bg-background">
-        {/* Drag region for left side - transparent, above graph content */}
+      {/* Left: Main panel area */}
+      <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-background">
+        {/* Drag region for left side - transparent, above content */}
         <TitleDragRegion className="fixed top-0 left-0 h-5 z-40 select-none" style={{ right: '280px' }} />
         {detailLoading && !detail ? (
           <SkeletonLines count={3} />
         ) : detail ? (
-          <div className="relative flex-1 flex flex-col">
-            {/* 固定浮动 tab 切换器 */}
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
-              <div className="liquid-glass rounded-full p-0.5 flex relative" style={{ minWidth: '240px' }}>
-                <div
-                  className="absolute top-0.5 bottom-0.5 rounded-full bg-primary/90 transition-all duration-300 ease-out"
-                  style={{
-                    width: 'calc(33.333% - 2px)',
-                    left: viewMode === 'graph' ? '2px' : viewMode === 'timeline' ? 'calc(33.333%)' : 'calc(66.666%)',
-                  }}
-                />
-                <button
-                  onClick={() => setViewMode('graph')}
-                  className="flex-1 py-1 px-3 text-[11px] font-semibold rounded-full relative z-10 transition-colors duration-200 text-center"
-                  style={{
-                    color: viewMode === 'graph' ? 'var(--color-on-primary)' : 'var(--color-muted-foreground)',
-                  }}
-                >
-                  Graph
-                </button>
-                <button
-                  onClick={() => setViewMode('timeline')}
-                  className="flex-1 py-1 px-3 text-[11px] font-semibold rounded-full relative z-10 transition-colors duration-200 text-center"
-                  style={{
-                    color: viewMode === 'timeline' ? 'var(--color-on-primary)' : 'var(--color-muted-foreground)',
-                  }}
-                >
-                  Timeline
-                </button>
-                <button
-                  onClick={() => setViewMode('conversation')}
-                  className="flex-1 py-1 px-3 text-[11px] font-semibold rounded-full relative z-10 transition-colors duration-200 text-center"
-                  style={{
-                    color: viewMode === 'conversation' ? 'var(--color-on-primary)' : 'var(--color-muted-foreground)',
-                  }}
-                >
-                  Chat
-                </button>
-              </div>
-            </div>
-            {/* 视图内容 */}
-            <div className="flex-1 relative">
-              <div
-                className="absolute inset-0 transition-opacity duration-300"
-                style={{ opacity: viewMode === 'graph' ? 1 : 0, pointerEvents: viewMode === 'graph' ? 'auto' : 'none' }}
-              >
-                <GraphCanvas
-                  events={sortedEvents}
-                  selectedEventId={selectedEventId}
-                  onNodeClick={(id) => {
-                    selectEvent(id);
-                    setOverlayOpen(true);
-                  }}
-                />
-              </div>
-              <div
-                className="absolute inset-0 transition-opacity duration-300"
-                style={{ opacity: viewMode === 'timeline' ? 1 : 0, pointerEvents: viewMode === 'timeline' ? 'auto' : 'none' }}
-              >
-                <TimelineView
-                  events={sortedEvents}
-                  selectedEventId={selectedEventId}
-                  onSelectEvent={(id) => {
-                    selectEvent(id);
-                    setOverlayOpen(true);
-                  }}
-                />
-              </div>
-              <div
-                className="absolute inset-0 transition-opacity duration-300"
-                style={{ opacity: viewMode === 'conversation' ? 1 : 0, pointerEvents: viewMode === 'conversation' ? 'auto' : 'none' }}
-              >
-                <ConversationView
-                  events={sortedEvents}
-                  selectedEventId={selectedEventId}
-                  onSelectEvent={(id) => {
-                    selectEvent(id);
-                    setOverlayOpen(true);
-                  }}
-                />
-              </div>
-            </div>
-          </div>
+          <PanelContainer node={root} />
         ) : (
           <EmptyState
             title="Select a session"
@@ -360,8 +280,8 @@ export function AppView() {
         </div>
       </aside>
 
-      {/* Event detail overlay */}
-      {overlayOpen && selectedEvent && (
+      {/* Event detail overlay - outside flex row to prevent layout shift */}
+      {selectedEvent && (
         <EventDetailOverlay
           event={selectedEvent}
           pairedEvent={pairedEvent}

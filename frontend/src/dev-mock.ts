@@ -228,6 +228,18 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
     return null as T;
   }
 
+  if (cmd === "read_raw_file") {
+    const sessionId = params.sessionId as string | undefined;
+    if (!sessionId) throw new Error("sessionId is required");
+
+    // In dev-mock, retrieve raw content from the last loaded sample
+    const allFiles = Array.from(rawFileContents.values());
+    if (allFiles.length === 0) {
+      throw new Error("No source file available for this session");
+    }
+    return allFiles[allFiles.length - 1] as T;
+  }
+
   throw new Error(`Unknown IPC command: ${cmd}`);
 }
 

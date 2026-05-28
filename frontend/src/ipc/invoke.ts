@@ -76,4 +76,9 @@ export const invoke = {
     const fn = await getInvoke();
     return fn<T>("engine_call", { method, params });
   },
+
+  async readRawFile(sessionId: string): Promise<string> {
+    const fn = await getInvoke();
+    return fn<string>("read_raw_file", { sessionId });
+  },
 };
