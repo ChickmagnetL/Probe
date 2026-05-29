@@ -48,12 +48,10 @@ const PillTabBar = memo(function PillTabBar({
   // Update indicator position after render
   const updateIndicator = useCallback(() => {
     if (!tabsRef.current || !indicatorRef.current) return;
-    const activeTab = tabsRef.current.querySelector(`[data-view="${activeView}"]`);
+    const activeTab = tabsRef.current.querySelector(`[data-view="${activeView}"]`) as HTMLElement | null;
     if (activeTab) {
-      const rect = activeTab.getBoundingClientRect();
-      const parentRect = tabsRef.current.getBoundingClientRect();
-      indicatorRef.current.style.left = `${rect.left - parentRect.left}px`;
-      indicatorRef.current.style.width = `${rect.width}px`;
+      indicatorRef.current.style.width = `${activeTab.offsetWidth}px`;
+      indicatorRef.current.style.transform = `translateX(${activeTab.offsetLeft}px)`;
     }
   }, [activeView]);
 
@@ -64,15 +62,12 @@ const PillTabBar = memo(function PillTabBar({
 
   return (
     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-      <div
-        className="liquid-glass rounded-full p-0.5 flex relative"
-        style={{ maxWidth: "calc(100% - 24px)" }}
-      >
-        <div ref={tabsRef} className="relative flex">
+      <div className="liquid-glass rounded-full p-0.5 flex items-center relative">
+        <div ref={tabsRef} className="relative flex items-center">
           {/* Sliding indicator */}
           <div
             ref={indicatorRef}
-            className="absolute top-0.5 bottom-0.5 rounded-full bg-primary/90 transition-all duration-300 ease-out"
+            className="absolute top-0.5 bottom-0.5 left-0 rounded-full bg-primary/90 transition-all duration-300 ease-out"
           />
           {VIEW_TABS.map((v) => (
             <button
@@ -80,7 +75,7 @@ const PillTabBar = memo(function PillTabBar({
               type="button"
               data-view={v}
               onClick={() => changeView(panelId, v)}
-              className="flex-1 py-1 px-3 text-[11px] font-semibold rounded-full relative z-10 transition-colors duration-200 text-center"
+              className="flex-shrink-0 py-1 px-3 text-[11px] font-semibold rounded-full relative z-10 transition-colors duration-200 text-center"
               style={{
                 color:
                   v === activeView
@@ -92,39 +87,31 @@ const PillTabBar = memo(function PillTabBar({
             </button>
           ))}
         </div>
-        {/* Divider */}
-        <div
-          className="w-px h-3.5 mx-0.5 shrink-0"
-          style={{ background: "rgba(0, 0, 0, 0.1)" }}
-        />
+        <div className="w-px h-3.5 bg-gray-400/70 mx-0.5" />
         {/* Split trigger */}
-        <div className="relative">
-          <button
-            type="button"
-            disabled={!canSplit}
-            onClick={() => canSplit && setMenuOpen(!menuOpen)}
-            className="relative z-10 bg-transparent border-none p-2 rounded-full cursor-pointer flex items-center transition-all duration-200"
-            style={{
-              color: canSplit
-                ? "var(--color-muted-foreground, #64748B)"
-                : "var(--color-muted-foreground, #64748B)",
-              opacity: canSplit ? 1 : 0.3,
-              pointerEvents: canSplit ? "auto" : "none",
-            }}
-            title={canSplit ? "Split panel" : "已达 4 面板上限"}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <line x1="12" y1="3" x2="12" y2="21" />
-            </svg>
-          </button>
-          <SplitMenu
-            open={menuOpen}
-            onSplitRight={handleSplitRight}
-            onSplitDown={handleSplitDown}
-            onClose={handleCloseMenu}
-          />
-        </div>
+        <button
+          type="button"
+          disabled={!canSplit}
+          onClick={() => canSplit && setMenuOpen(!menuOpen)}
+          className="relative z-10 bg-transparent border-none py-1 px-2 rounded-full cursor-pointer flex items-center transition-all duration-200"
+          style={{
+            color: "var(--color-muted-foreground, #64748B)",
+            opacity: canSplit ? 1 : 0.3,
+            pointerEvents: canSplit ? "auto" : "none",
+          }}
+          title={canSplit ? "Split panel" : "已达 4 面板上限"}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="12" y1="3" x2="12" y2="21" />
+          </svg>
+        </button>
+        <SplitMenu
+          open={menuOpen}
+          onSplitRight={handleSplitRight}
+          onSplitDown={handleSplitDown}
+          onClose={handleCloseMenu}
+        />
       </div>
     </div>
   );
