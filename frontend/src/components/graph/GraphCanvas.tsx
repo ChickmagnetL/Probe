@@ -123,10 +123,59 @@ export function GraphCanvas({
     cacheDirtyRef.current = true;
   }, [graphTurns, events, childSessions]);
 
-  // Invalidate cache on selection change
+  // Invalidate cache on selection change & animate to selected node
   useEffect(() => {
     cacheDirtyRef.current = true;
     dirtyRef.current = true;
+
+    if (!selectedEventId || !dataRef.current || !canvasRef.current) return;
+    const node = dataRef.current.nodes.find((n) => n.eventId === selectedEventId);
+    if (!node) return;
+
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const t = transformRef.current;
+
+    // Target transform: center the node in the canvas
+    const targetX = rect.width / 2 - node.x * t.k;
+    const targetY = rect.height / 2 - node.y * t.k;
+
+    // Skip animation if already roughly centered (within 30px)
+    const dx = Math.abs(t.x - targetX);
+    const dy = Math.abs(t.y - targetY);
+    if (dx < 30 && dy < 30) return;
+
+    const startX = t.x;
+    const startY = t.y;
+    const startTime = performance.now();
+    const duration = 300;
+
+    function lerp(a: number, b: number, t: number): number {
+      return a + (b - a) * t;
+    }
+
+    function easeOutCubic(t: number): number {
+      return 1 - Math.pow(1 - t, 3);
+    }
+
+    function animate(now: number) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const ease = easeOutCubic(progress);
+
+      transformRef.current = {
+        x: lerp(startX, targetX, ease),
+        y: lerp(startY, targetY, ease),
+        k: t.k,
+      };
+      dirtyRef.current = true;
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    }
+
+    requestAnimationFrame(animate);
   }, [selectedEventId]);
 
   // Labels don't need cache rebuild, just repaint

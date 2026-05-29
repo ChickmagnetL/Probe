@@ -1,3 +1,4 @@
+import { useRef, useEffect } from "react";
 import type { EventRow } from "../../ipc/types";
 import { EventNode } from "./EventNode";
 
@@ -8,9 +9,25 @@ interface TimelineViewProps {
 }
 
 export function TimelineView({ events, selectedEventId, onSelectEvent }: TimelineViewProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!selectedEventId || !scrollRef.current) return;
+    const el = scrollRef.current.querySelector<HTMLElement>(
+      `[data-event-id="${selectedEventId}"]`,
+    );
+    if (!el) return;
+    const container = scrollRef.current;
+    const elRect = el.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const relativeTop = elRect.top - containerRect.top;
+    const targetScrollTop =
+      container.scrollTop + relativeTop - (container.clientHeight - el.offsetHeight) / 2;
+    container.scrollTo({ top: targetScrollTop, behavior: "smooth" });
+  }, [selectedEventId]);
+
   return (
     <div className="flex flex-col h-full">
-      {/* 顶部留出空间给浮动 tab，右侧显示事件数 */}
       <div className="shrink-0 flex items-center justify-end px-5 pt-8 pb-2">
         {events.length > 0 && (
           <span className="text-[11px] font-medium text-muted-foreground">
@@ -18,19 +35,20 @@ export function TimelineView({ events, selectedEventId, onSelectEvent }: Timelin
           </span>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto px-5 pb-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-4">
         {events.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No events</p>
         ) : (
           <div>
             {events.map((ev, i) => (
-              <EventNode
-                key={ev.id}
-                event={ev}
-                index={i}
-                isSelected={ev.id === selectedEventId}
-                onClick={() => onSelectEvent(ev.id)}
-              />
+              <div key={ev.id} data-event-id={ev.id}>
+                <EventNode
+                  event={ev}
+                  index={i}
+                  isSelected={ev.id === selectedEventId}
+                  onClick={() => onSelectEvent(ev.id)}
+                />
+              </div>
             ))}
           </div>
         )}

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import type { EventRow } from "../../ipc/types";
 import { kindLabel } from "../graph/graph-labels";
 
@@ -105,6 +105,13 @@ function StepList({
   onSelectEvent: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (selectedEventId && steps.some((s) => s.id === selectedEventId)) {
+      setOpen(true);
+    }
+  }, [selectedEventId, steps]);
+
   if (steps.length === 0) return null;
 
   return (
@@ -133,6 +140,7 @@ function StepList({
             return (
               <div
                 key={step.id}
+                data-event-id={step.id}
                 onClick={() => onSelectEvent(step.id)}
                 className={`
                   flex items-start gap-2 px-3 py-2 rounded-lg text-xs cursor-pointer
@@ -161,6 +169,27 @@ export function ConversationView({
   onSelectEvent,
 }: ConversationViewProps) {
   const turns = useMemo(() => buildTurns(events), [events]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!selectedEventId || !scrollRef.current) return;
+    // Delay to allow StepList auto-expand to render the DOM element
+    const id = requestAnimationFrame(() => {
+      const container = scrollRef.current;
+      if (!container) return;
+      const el = container.querySelector<HTMLElement>(
+        `[data-event-id="${selectedEventId}"]`,
+      );
+      if (!el) return;
+      const elRect = el.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const relativeTop = elRect.top - containerRect.top;
+      const targetScrollTop =
+        container.scrollTop + relativeTop - (container.clientHeight - el.offsetHeight) / 2;
+      container.scrollTo({ top: targetScrollTop, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [selectedEventId]);
 
   return (
     <div className="flex flex-col h-full">
@@ -171,7 +200,7 @@ export function ConversationView({
           </span>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto px-5 pb-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-4">
         {turns.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No events</p>
         ) : (
@@ -186,7 +215,7 @@ export function ConversationView({
                 />
 
                 {turn.user && (
-                  <div className="flex justify-end">
+                  <div className="flex justify-end" data-event-id={turn.user!.id}>
                     <div
                       onClick={() => onSelectEvent(turn.user!.id)}
                       className={`
@@ -216,7 +245,7 @@ export function ConversationView({
                 />
 
                 {turn.assistant && (
-                  <div className="flex justify-start">
+                  <div className="flex justify-start" data-event-id={turn.assistant!.id}>
                     <div
                       onClick={() => onSelectEvent(turn.assistant!.id)}
                       className={`
