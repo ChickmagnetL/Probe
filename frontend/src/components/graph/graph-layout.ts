@@ -19,6 +19,7 @@ export interface GraphNode {
   sessionId?: string;
   spindleRole?: "anchor" | "intermediate" | "subagent";
   subagentTint?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface GraphLink {
@@ -56,6 +57,7 @@ export interface TurnEvent {
   summary?: string;
   child_session_id?: string;
   output_event_id?: string;
+  metadata?: RawEvent;
   [key: string]: unknown;
 }
 
@@ -318,6 +320,7 @@ function layoutTurn(
       isAnchor: true,
       isInput: true,
       spindleRole: "anchor",
+      metadata: ev as Record<string, unknown>,
     };
     nodes.push(node);
     const bottom = originY;
@@ -398,6 +401,7 @@ function layoutTurn(
         isInput: false,
         sessionId: ev.child_session_id,
         spindleRole: "subagent",
+        metadata: ev as Record<string, unknown>,
         // Only set subagentTint for multi-agent (PRD R6: single agent has no tint circle)
         ...(multiSub ? { subagentTint: tint } : {}),
       };
@@ -419,6 +423,7 @@ function layoutTurn(
         isAnchor: true,
         isInput: i === 0,
         spindleRole: "anchor",
+        metadata: ev as Record<string, unknown>,
       };
       nodes.push(node);
     } else {
@@ -437,6 +442,7 @@ function layoutTurn(
         isAnchor: false,
         isInput: false,
         spindleRole: "intermediate",
+        metadata: ev as Record<string, unknown>,
       };
       nodes.push(node);
     }
@@ -674,5 +680,6 @@ function toTurnEvent(ev: RawEvent): TurnEvent {
     summary,
     timestamp: ev.timestamp ?? undefined,
     source_line_no: ev.source_line_no ?? undefined,
+    metadata: ev,
   };
 }

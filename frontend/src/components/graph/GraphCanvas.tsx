@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import type { EventRow } from "../../ipc/types";
-import type { GraphData, GraphTurn, ChildSession } from "./graph-layout";
+import type { GraphData, GraphTurn, ChildSession, GraphNode } from "./graph-layout";
 import { buildGraphFromTurns, buildTurnsFromEvents } from "./graph-layout";
 import {
   renderStaticLayer,
@@ -12,6 +12,7 @@ import {
   type ViewportBounds,
 } from "./graph-renderer";
 import { createInteractionHandlers, type Transform } from "./graph-interaction";
+import { GraphTooltip } from "./GraphTooltip";
 
 interface GraphCanvasProps {
   graphTurns?: GraphTurn[];
@@ -61,6 +62,7 @@ export function GraphCanvas({
   const dataRef = useRef<GraphData | null>(null);
   const transformRef = useRef<Transform>({ x: 0, y: 0, k: 1 });
   const [labelsVisible, setLabelsVisible] = useState(true);
+  const [tooltipNode, setTooltipNode] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
 
   // Hover via ref — no React re-render
   const hoveredNodeIdRef = useRef<string | null>(null);
@@ -330,12 +332,23 @@ export function GraphCanvas({
           hoveredNodeIdRef.current = newId;
           dirtyRef.current = true;
         }
+        // Update tooltip state when hovering
+        if (node) {
+          const rect = canvas?.getBoundingClientRect();
+          if (rect) {
+            setTooltipNode({ node, x: mx - rect.left, y: my - rect.top });
+          }
+        } else {
+          setTooltipNode(null);
+        }
         canvas.style.cursor = node ? "pointer" : "grab";
       },
       (mx, my) => {
         const data = dataRef.current;
         if (!data) return;
         const node = hitTest(data.nodes, mx, my, transformRef.current, getViewport());
+        // Clear tooltip on click
+        setTooltipNode(null);
         if (node) onNodeClick(node.eventId);
       },
     );
@@ -368,6 +381,15 @@ export function GraphCanvas({
       />
 
       <div className="pointer-events-none absolute inset-0">
+        {tooltipNode && (
+          <GraphTooltip
+            node={tooltipNode.node}
+            x={tooltipNode.x}
+            y={tooltipNode.y}
+            viewportWidth={containerRef.current?.clientWidth ?? 800}
+            viewportHeight={containerRef.current?.clientHeight ?? 600}
+          />
+        )}
         <div className="pointer-events-auto absolute top-4 right-4 glass-card rounded-xl p-3">
           <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">Legend</div>
           <div className="flex flex-col gap-2 text-xs">
