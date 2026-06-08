@@ -32,23 +32,33 @@ function extractFields(node: GraphNode): TooltipField[] {
     parsedMeta = { ...meta, ...meta.metadata };
   }
 
-  const eventType = parsedMeta.event_type as string | undefined;
+  // Try multiple sources for event type:
+  // 1. event_type (from frontend parser extractors.ts)
+  // 2. payload_type (from raw JSONL)
+  // 3. node.kind (fallback, though it's usually "tool_output" not "exec_command_end")
+  const eventType = (parsedMeta.event_type || parsedMeta.payload_type || node.kind) as string | undefined;
 
   switch (eventType) {
     case "exec_command_end": {
       const fields: TooltipField[] = [];
+      // Try both parsed field names (command_text from extractors) and raw payload field names (command from JSONL)
       const commandText = parsedMeta.command_text as string | undefined;
+      const command = parsedMeta.command;
+      const commandString = commandText || (typeof command === "string" ? command : Array.isArray(command) ? command.join(" ") : undefined);
       const exitCode = parsedMeta.exit_code as number | undefined;
       const durationMs = parsedMeta.duration_ms as number | undefined;
+      // Fallback to parsing duration object if duration_ms not available
+      const duration = parsedMeta.duration as { secs?: number; nanos?: number } | undefined;
+      const computedDurationMs = durationMs ?? (duration ? Math.round((duration.secs || 0) * 1000 + (duration.nanos || 0) / 1_000_000) : undefined);
 
-      if (commandText) {
-        fields.push({ key: "cmd", label: "Command", value: commandText });
+      if (commandString) {
+        fields.push({ key: "cmd", label: "Command", value: commandString });
       }
       if (exitCode !== undefined) {
         fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
       }
-      if (durationMs !== undefined) {
-        fields.push({ key: "dur", label: "Duration", value: `${durationMs}ms` });
+      if (computedDurationMs !== undefined) {
+        fields.push({ key: "dur", label: "Duration", value: `${computedDurationMs}ms` });
       }
       return fields;
     }
@@ -72,6 +82,9 @@ function extractFields(node: GraphNode): TooltipField[] {
       const query = parsedMeta.query as string | undefined;
       const results = parsedMeta.results as unknown[] | undefined;
       const durationMs = parsedMeta.duration_ms as number | undefined;
+      // Fallback to parsing duration object if duration_ms not available
+      const duration = parsedMeta.duration as { secs?: number; nanos?: number } | undefined;
+      const computedDurationMs = durationMs ?? (duration ? Math.round((duration.secs || 0) * 1000 + (duration.nanos || 0) / 1_000_000) : undefined);
 
       if (query) {
         fields.push({ key: "query", label: "Query", value: query });
@@ -79,8 +92,8 @@ function extractFields(node: GraphNode): TooltipField[] {
       if (results) {
         fields.push({ key: "results", label: "Results", value: `${results.length} results` });
       }
-      if (durationMs !== undefined) {
-        fields.push({ key: "dur", label: "Duration", value: `${durationMs}ms` });
+      if (computedDurationMs !== undefined) {
+        fields.push({ key: "dur", label: "Duration", value: `${computedDurationMs}ms` });
       }
       return fields;
     }
