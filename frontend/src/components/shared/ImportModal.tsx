@@ -4,6 +4,25 @@ import { useSessionStore } from "../../stores/session";
 import { ProgressBar } from "./ProgressBar";
 import { formatTokens } from "../../lib/format";
 
+const IMPORT_DETAIL_LABELS: Record<string, string> = {
+  parse_errors: "解析提醒",
+  raw_records: "原始导入记录",
+  conversation_meta_raw: "会话信息",
+  turn_manifest: "回合设置",
+  message_items_raw: "消息内容",
+  reasoning_items_raw: "思考内容",
+  tool_calls_raw: "工具调用",
+  tool_call_outputs_raw: "工具输出",
+  tool_call_pairs: "工具调用关联",
+  telemetry_events: "用量统计",
+  lifecycle_events: "任务状态",
+  structured_tool_end_events: "工具结果",
+  collaboration_events: "子代理协作",
+  search_events: "网页搜索",
+  system_events: "系统状态",
+  compaction_events: "上下文压缩",
+};
+
 export function ImportModal() {
   const {
     modalOpen,
@@ -199,6 +218,7 @@ export function ImportModal() {
                 <StatCard label="Records" value={result.parsed_records} />
                 <StatCard label="Sessions" value={result.imported_session_count} />
                 <StatCard label="Parse Errors" value={result.parse_errors} isError={result.parse_errors > 0} />
+                <StatCard label="需确认" value={result.unknown_record_count} isError={result.unknown_record_count > 0} />
                 <StatCard label="Root Views" value={result.root_session_count} />
                 <StatCard
                   label="Total Tokens"
@@ -219,13 +239,15 @@ export function ImportModal() {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground transition-transform group-open:rotate-90">
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
-                    Table Counts
+                    导入明细
                   </summary>
                   <div className="border-t border-border px-4 py-3">
                     <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-                      {Object.entries(result.table_counts).map(([table, count]) => (
-                        <div key={table} className="flex justify-between items-center text-sm py-0.5">
-                          <span className="text-muted-foreground font-mono text-xs">{table}</span>
+                      {Object.entries(result.table_counts).map(([detailKey, count]) => (
+                        <div key={detailKey} className="flex justify-between items-center text-sm py-0.5">
+                          <span className="text-muted-foreground text-xs">
+                            {IMPORT_DETAIL_LABELS[detailKey] ?? "其他导入内容"}
+                          </span>
                           <span className="font-semibold text-foreground tabular-nums">{count}</span>
                         </div>
                       ))}

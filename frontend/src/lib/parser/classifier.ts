@@ -7,6 +7,7 @@ const LIFECYCLE_EVENT_TYPES = new Set([
 ]);
 
 const STRUCTURED_TOOL_END_EVENT_TYPES = new Set([
+  "exec_command_begin",
   "exec_command_end",
   "patch_apply_end",
   "mcp_tool_call_end",
@@ -23,11 +24,17 @@ const COLLABORATION_EVENT_TYPES = new Set([
 const SYSTEM_EVENT_TYPES = new Set([
   "guardian_assessment",
   "error",
+  "stream_error",
   "thread_rolled_back",
+  "turn_diff",
+  "plan_update",
+  "thread_goal_updated",
+  "hook_started",
+  "hook_completed",
 ]);
 
 const SEARCH_EVENT_TYPES = new Set([
-  "web_search_call",
+  "web_search_begin",
   "web_search_end",
 ]);
 
@@ -61,6 +68,12 @@ export function classifyRecord(
     }
     if (payload_type === "function_call_output" || payload_type === "custom_tool_call_output") {
       return { table_name: "tool_call_outputs_raw", route_key: `response_item.${payload_type}`, reserved: false };
+    }
+    if (payload_type === "web_search_call") {
+      return { table_name: "search_events", route_key: "response_item.web_search_call", reserved: false };
+    }
+    if (payload_type === "image_generation_call") {
+      return { table_name: "structured_tool_end_events", route_key: "response_item.image_generation_call", reserved: false };
     }
     return { table_name: null, route_key: `response_item.${payload_type || "unknown"}`, reserved: false };
   }

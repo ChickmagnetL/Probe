@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanelStore } from "../../stores/panel";
 import { useSessionStore } from "../../stores/session";
 import { DraggableDivider } from "./DraggableDivider";
@@ -9,6 +9,11 @@ import { GraphCanvas } from "../graph/GraphCanvas";
 import { TimelineView } from "../timeline/TimelineView";
 import { ConversationView } from "../conversation/ConversationView";
 import { RawView } from "../raw/RawView";
+import {
+  DebugBasketPanel,
+  debugBasketBadgeCount,
+  hasDebugBasketContent,
+} from "./DebugBasketPanel";
 
 // ── Pill tab bar ───────────────────────────────────────
 
@@ -18,12 +23,20 @@ interface PillTabBarProps {
   activeView: ViewKind;
   panelId: string;
   panelCount: number;
+  showDebugButton: boolean;
+  debugOpen: boolean;
+  debugBadgeCount: number;
+  onToggleDebug: () => void;
 }
 
 const PillTabBar = memo(function PillTabBar({
   activeView,
   panelId,
   panelCount,
+  showDebugButton,
+  debugOpen,
+  debugBadgeCount,
+  onToggleDebug,
 }: PillTabBarProps) {
   const changeView = usePanelStore((s) => s.changeView);
   const splitPanel = usePanelStore((s) => s.splitPanel);
@@ -106,6 +119,32 @@ const PillTabBar = memo(function PillTabBar({
             <line x1="12" y1="3" x2="12" y2="21" />
           </svg>
         </button>
+        {showDebugButton && (
+          <button
+            type="button"
+            onClick={onToggleDebug}
+            className="relative z-10 bg-transparent border-none py-1 px-2 rounded-full cursor-pointer flex items-center transition-all duration-200"
+            style={{
+              color: debugBadgeCount > 0 ? "#B45309" : "var(--color-muted-foreground, #64748B)",
+            }}
+            title="导入内容确认"
+            aria-label="导入内容确认"
+            aria-pressed={debugOpen}
+          >
+            <span
+              className="block h-2.5 w-2.5 rounded-full"
+              style={{
+                background: debugBadgeCount > 0 ? "#F59E0B" : "#94A3B8",
+                boxShadow: debugOpen ? "0 0 0 3px rgba(245, 158, 11, 0.18)" : "none",
+              }}
+            />
+            {debugBadgeCount > 0 && (
+              <span className="absolute -right-1 -top-1 min-w-4 h-4 rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-4 text-white tabular-nums">
+                {debugBadgeCount > 99 ? "99+" : debugBadgeCount}
+              </span>
+            )}
+          </button>
+        )}
         <SplitMenu
           open={menuOpen}
           onSplitRight={handleSplitRight}
@@ -252,6 +291,23 @@ const PanelCard = memo(function PanelCard({
   view,
   panelCount,
 }: PanelCardProps) {
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const debugBasket = useSessionStore((s) => (
+    s.detail?.session.id === s.activeSessionId
+      ? s.detail.session.debug_basket ?? null
+      : null
+  ));
+  const [debugOpen, setDebugOpen] = useState(false);
+  const debugBadgeCount = debugBasketBadgeCount(debugBasket);
+  const showDebugButton = hasDebugBasketContent(debugBasket);
+  const handleToggleDebug = useCallback(() => {
+    setDebugOpen((open) => !open);
+  }, []);
+
+  useEffect(() => {
+    setDebugOpen(false);
+  }, [activeSessionId]);
+
   return (
     <div
       className={`relative bg-white rounded-lg overflow-hidden min-w-0 min-h-0 w-full h-full ${panelCount > 1 ? "border border-border" : ""}`}
@@ -263,11 +319,16 @@ const PanelCard = memo(function PanelCard({
         activeView={view}
         panelId={panelId}
         panelCount={panelCount}
+        showDebugButton={showDebugButton}
+        debugOpen={debugOpen}
+        debugBadgeCount={debugBadgeCount}
+        onToggleDebug={handleToggleDebug}
       />
       <CloseButton panelId={panelId} panelCount={panelCount} />
       <div className="absolute inset-0 pt-[42px] overflow-hidden">
         <PanelViewContent view={view} />
       </div>
+      {debugBasket && <DebugBasketPanel open={debugOpen} basket={debugBasket} />}
     </div>
   );
 });

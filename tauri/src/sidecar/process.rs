@@ -32,30 +32,22 @@ fn is_bundled() -> bool {
     false
 }
 
-/// Resolve the sidecar binary path for both bundled and dev modes.
+/// Resolve the packaged sidecar binary path for bundled mode.
 ///
 /// Bundled: `<binary_dir>/probe-engine` (Tauri places externalBin in Contents/MacOS/)
-/// Dev:     `<manifest_dir>/../engine/dist/probe-engine`
-fn sidecar_path() -> PathBuf {
+/// Dev:     None; dev launches current Python source from `engine/`.
+fn sidecar_path() -> Option<PathBuf> {
     if is_bundled() {
         // Bundled mode: Tauri places externalBin binaries next to the main
         // executable in Contents/MacOS/.
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
-                let path = parent.join("probe-engine");
-                if path.exists() {
-                    return path;
-                }
+                return Some(parent.join("probe-engine"));
             }
         }
     }
 
-    // Dev mode (or fallback): sidecar is built alongside engine/
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .parent()
-        .expect("app/ directory")
-        .join("engine/dist/probe-engine")
+    None
 }
 
 /// Resolve the engine directory for both bundled and dev modes.
@@ -97,10 +89,22 @@ impl SidecarManager {
         }
 
         let engine = engine_dir();
-        let sidecar = sidecar_path();
 
-        let mut child = if sidecar.exists() {
+        let mut child = if let Some(sidecar) = sidecar_path() {
+            if !sidecar.exists() {
+                return Err(format!(
+                    "bundled sidecar not found at {}",
+                    sidecar.display()
+                ));
+            }
+
             // Bundled mode: use the PyInstaller standalone binary.
+            eprintln!(
+                "[sidecar] launching bundled binary: {} (cwd={})",
+                sidecar.display(),
+                engine.display()
+            );
+
             Command::new(&sidecar)
                 .current_dir(&engine)
                 .stdin(std::process::Stdio::piped())
@@ -109,13 +113,28 @@ impl SidecarManager {
                 .spawn()
                 .map_err(|e| format!("failed to spawn sidecar: {e}"))?
         } else {
-            // Dev mode: fall back to python3 + server.py
+            // Dev mode: run the current source tree instead of any stale
+            // engine/dist/probe-engine artifact left from PyInstaller builds.
             let python = find_python();
             let server_py = engine.join("server.py");
+            let dev_dist = engine.join("dist/probe-engine");
 
             if !server_py.exists() {
                 return Err(format!("server.py not found at {}", server_py.display()));
             }
+
+            if dev_dist.exists() {
+                eprintln!(
+                    "[sidecar] dev source launch: ignoring dist artifact at {}",
+                    dev_dist.display()
+                );
+            }
+            eprintln!(
+                "[sidecar] launching dev source: {} {} (cwd={})",
+                python,
+                server_py.display(),
+                engine.display()
+            );
 
             Command::new(&python)
                 .arg(&server_py)

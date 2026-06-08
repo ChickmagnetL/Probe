@@ -73,6 +73,7 @@ def _to_session_row(s: dict[str, Any]) -> dict[str, Any]:
         "agent_role": s.get("agent_role"),
         "start_time": s.get("start_time"),
         "end_time": s.get("end_time"),
+        "debug_basket": s.get("debug_basket"),
     }
 
 
@@ -93,5 +94,9 @@ def _to_event_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "summary": e.get("summary"),
             "args": e.get("args"),
             "raw_text": e.get("raw_text"),
+            "event_type": e.get("event_type"),
+            "detail_note": e.get("detail_note"),
+            "extracted_fields": e.get("extracted_fields"),
+            "extra_fields": e.get("extra_fields"),
         })
     return rows

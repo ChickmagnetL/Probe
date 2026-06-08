@@ -42,6 +42,7 @@ function sessionSummaryToRow(s: JSONDict): SessionRow {
     start_time: (s.start_time as string) ?? null,
     end_time: (s.end_time as string) ?? null,
     imported_at: new Date().toISOString(),
+    debug_basket: s.debug_basket as SessionRow["debug_basket"],
   };
 }
 
@@ -72,7 +73,7 @@ function eventToRow(e: JSONDict): EventRow {
     role: (e.role as string) ?? null,
     phase: (e.phase as string) ?? null,
     content: (e.content as string) ?? (e.summary as string) ?? null,
-    metadata: e.raw_text ? JSON.stringify({ raw_text: e.raw_text, source_record: e.source_record }) : null,
+    metadata: JSON.stringify(e),
     source_line_no: typeof e.source_line_no === "number" ? e.source_line_no : null,
   };
 }
@@ -82,6 +83,8 @@ function buildImportResult(summary: JSONDict): ImportResult {
     total_files: Number(summary.total_files ?? 0),
     parsed_records: Number(summary.parsed_records ?? 0),
     parse_errors: Number(summary.parse_errors ?? 0),
+    unknown_record_count: Number(summary.unknown_record_count ?? 0),
+    unknown_route_keys: (summary.unknown_route_keys as string[]) ?? [],
     imported_session_count: Number(summary.imported_session_count ?? 0),
     root_session_count: Number(summary.root_session_count ?? 0),
     sessions: (summary.sessions as JSONDict[] ?? [])
@@ -90,6 +93,11 @@ function buildImportResult(summary: JSONDict): ImportResult {
     root_sessions: (summary.root_sessions as JSONDict[] ?? [])
       .map(toSessionSummary),
     table_counts: (summary.table_counts as Record<string, number>) ?? {},
+    record_type_counts: (summary.record_type_counts as Record<string, number>) ?? {},
+    payload_type_counts: (summary.payload_type_counts as Record<string, number>) ?? {},
+    reserved_route_counts: (summary.reserved_route_counts as Record<string, number>) ?? {},
+    unknown_route_counts: (summary.unknown_route_counts as Record<string, number>) ?? {},
+    debug_basket: summary.debug_basket as ImportResult["debug_basket"],
   };
 }
 
@@ -106,6 +114,7 @@ function toSessionSummary(s: JSONDict): SessionSummary {
     is_synthetic: Boolean(s.is_synthetic),
     agent_nickname: (s.agent_nickname as string) ?? null,
     agent_role: (s.agent_role as string) ?? null,
+    cli_version: (s.cli_version as string) ?? null,
     start_time: (s.start_time as string) ?? null,
     end_time: (s.end_time as string) ?? null,
     own_metrics: s.own_metrics as SessionMetrics,
@@ -114,6 +123,7 @@ function toSessionSummary(s: JSONDict): SessionSummary {
     timeline: (s.timeline as SessionEvent[]) ?? [],
     graph_turns: (s.graph_turns as GraphTurn[]) ?? [],
     child_sessions: (s.child_sessions as SessionSummary[]) ?? [],
+    debug_basket: s.debug_basket as SessionSummary["debug_basket"],
   };
 }
 

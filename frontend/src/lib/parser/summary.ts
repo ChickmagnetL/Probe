@@ -71,6 +71,7 @@ function seedSessions(
     session.agent_role = session.agent_role
       ?? stringOrNull(row.agent_role)
       ?? stringOrNull(threadSpawn.agent_role);
+    session.cli_version = stringOrNull(row.cli_version);
     session.start_time = stringOrNull(row.conversation_started_at)
       ?? stringOrNull(row.timestamp);
   }
@@ -117,6 +118,22 @@ function collectEvents(
   for (const row of buffers.lifecycle_events) {
     const session = sessionForRow(row, sessions);
     session.lifecycle.push({ ...row });
+  }
+  for (const row of buffers.structured_tool_end_events) {
+    const session = sessionForRow(row, sessions);
+    session.events.push(buildParserEvent(row, session.session_id, "tool_event"));
+  }
+  for (const row of buffers.search_events) {
+    const session = sessionForRow(row, sessions);
+    session.events.push(buildParserEvent(row, session.session_id, "search_event"));
+  }
+  for (const row of buffers.system_events) {
+    const session = sessionForRow(row, sessions);
+    session.events.push(buildParserEvent(row, session.session_id, "system_event"));
+  }
+  for (const row of buffers.compaction_events) {
+    const session = sessionForRow(row, sessions);
+    session.events.push(buildParserEvent(row, session.session_id, "compaction_event"));
   }
 }
 
@@ -272,6 +289,189 @@ function buildTelemetrySnapshot(row: JSONDict): JSONDict {
   };
 }
 
+function buildParserEvent(row: JSONDict, session_id: string, kind: string): JSONDict {
+  const eventType = stringOrNull(row.event_type) ?? stringOrNull(row.payload_type) ?? "event";
+  const title = eventTitle(eventType);
+  const content = eventContent(row, eventType);
+  return {
+    event_id: row.event_id ?? row.raw_record_id,
+    session_id,
+    timestamp: row.timestamp,
+    kind,
+    role: null,
+    phase: null,
+    title,
+    summary: truncate(eventSummary(row, eventType, content), 120),
+    content,
+    content_label: "事件详情",
+    detail_note: stringOrNull(row.status) ?? stringOrNull(row.error_type),
+    raw_record_id: row.raw_record_id,
+    source_path: row.source_path,
+    source_line_no: row.source_line_no,
+    raw_text: row.raw_text,
+    event_type: eventType,
+  };
+}
+
+function eventTitle(eventType: string): string {
+  const labels: Record<string, string> = {
+    exec_command_begin: "命令开始",
+    exec_command_end: "命令结果",
+    patch_apply_end: "文件修改结果",
+    mcp_tool_call_end: "外部工具结果",
+    view_image_tool_call: "查看图片",
+    image_generation_call: "图片生成",
+    web_search_call: "网页搜索",
+    web_search_begin: "网页搜索开始",
+    web_search_end: "网页搜索结果",
+    guardian_assessment: "安全审查",
+    error: "错误",
+    stream_error: "流错误",
+    thread_rolled_back: "线程回滚",
+    turn_diff: "回合变更",
+    plan_update: "计划更新",
+    thread_goal_updated: "目标更新",
+    context_compacted: "上下文压缩",
+  };
+  return labels[eventType] ?? eventType;
+}
+
+function eventContent(row: JSONDict, eventType: string): string | null {
+  if (eventType === "exec_command_end" || eventType === "exec_command_begin") {
+    const lines = [
+      stringOrNull(row.command_text) ? `$ ${stringOrNull(row.command_text)}` : null,
+      typeof row.exit_code === "number" ? `exit_code: ${row.exit_code}` : null,
+      stringOrNull(row.status) ? `status: ${stringOrNull(row.status)}` : null,
+      stringOrNull(row.aggregated_output) ?? stringOrNull(row.formatted_output)
+        ?? stringOrNull(row.stdout) ?? stringOrNull(row.stderr),
+    ].filter((line): line is string => Boolean(line));
+    return lines.length > 0 ? lines.join("\n") : jsonishText(row.payload);
+  }
+  if (eventType === "patch_apply_end") {
+    const changes = row.changes;
+    const diff = firstUnifiedDiff(changes);
+    return diff ?? stringOrNull(row.stdout) ?? jsonishText(changes);
+  }
+  if (eventType === "web_search_call" || eventType === "web_search_begin" || eventType === "web_search_end") {
+    return stringOrNull(row.query) ?? jsonishText(row.results) ?? jsonishText(row.sources) ?? jsonishText(row.action);
+  }
+  if (eventType === "guardian_assessment") {
+    return stringOrNull(row.rationale) ?? jsonishText(row.action);
+  }
+  if (eventType === "error" || eventType === "stream_error") {
+    return stringOrNull(row.message) ?? jsonishText(row.additional_details);
+  }
+  if (eventType === "turn_diff") {
+    return stringOrNull(row.unified_diff) ?? jsonishText(row.changes);
+  }
+  if (eventType === "plan_update") {
+    return jsonishText(row.plan) ?? stringOrNull(row.explanation);
+  }
+  return stringOrNull(row.message) ?? stringOrNull(row.summary) ?? jsonishText(row.payload);
+}
+
+function eventSummary(row: JSONDict, eventType: string, content: string | null): string {
+  if (eventType === "exec_command_end" || eventType === "exec_command_begin") {
+    const cmd = stringOrNull(row.command_text);
+    const exit = typeof row.exit_code === "number" ? ` exit ${row.exit_code}` : "";
+    return cmd ? `${cmd}${exit}` : content ?? eventType;
+  }
+  if (eventType === "patch_apply_end") {
+    const changes = objectKeyCount(row.changes);
+    return changes > 0 ? `${changes} file change${changes === 1 ? "" : "s"}` : content ?? eventType;
+  }
+  if (eventType === "thread_rolled_back" && typeof row.num_turns === "number") {
+    return `${row.num_turns} turn(s) rolled back`;
+  }
+  return content ?? stringOrNull(row.status) ?? eventType;
+}
+
+function firstUnifiedDiff(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  for (const item of Object.values(value as JSONDict)) {
+    if (typeof item === "object" && item !== null && !Array.isArray(item)) {
+      const diff = stringOrNull((item as JSONDict).unified_diff);
+      if (diff) return diff;
+    }
+  }
+  return null;
+}
+
+function objectKeyCount(value: unknown): number {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.keys(value as JSONDict).length
+    : 0;
+}
+
+function buildDebugBasket(buffers: ExtractionBuffers): JSONDict {
+  const extracted = new Map<string, { table_name: string; count: number; keys: Set<string> }>();
+  const residual = new Map<string, { table_name: string; count: number; keys: Set<string> }>();
+  const tables = [
+    "conversation_meta_raw", "turn_manifest", "message_items_raw",
+    "reasoning_items_raw", "tool_calls_raw", "tool_call_outputs_raw",
+    "telemetry_events", "lifecycle_events", "structured_tool_end_events",
+    "collaboration_events", "search_events", "system_events", "compaction_events",
+  ] as const;
+
+  for (const table of tables) {
+    for (const row of buffers[table]) {
+      const route = stringOrNull(row.route_key) ?? table;
+      const extractedFields = Array.isArray(row.extracted_fields) ? row.extracted_fields : [];
+      const extra = typeof row.extra_fields === "object" && row.extra_fields !== null && !Array.isArray(row.extra_fields)
+        ? row.extra_fields as JSONDict
+        : {};
+      if (extractedFields.length > 0) {
+        const entry = extracted.get(route) ?? { table_name: table, count: 0, keys: new Set<string>() };
+        entry.count += 1;
+        for (const key of extractedFields) {
+          if (typeof key === "string") entry.keys.add(key);
+        }
+        extracted.set(route, entry);
+      }
+      const extraKeys = Object.keys(extra);
+      if (extraKeys.length > 0) {
+        const entry = residual.get(route) ?? { table_name: table, count: 0, keys: new Set<string>() };
+        entry.count += 1;
+        for (const key of extraKeys) entry.keys.add(key);
+        residual.set(route, entry);
+      }
+    }
+  }
+
+  const unknown_routes = Object.entries(buffers.unknown_route_counts)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([route_key, count]) => ({
+      route_key,
+      count,
+      sources: buffers.raw_records
+        .filter((row) => row.route_key === route_key && row.route_table === null)
+        .slice(0, 8)
+        .map((row) => `${String(row.source_path ?? "")}:${String(row.source_line_no ?? "")}`),
+    }));
+
+  const residualGroups = mapDebugGroups(residual);
+  return {
+    extracted_fields: mapDebugGroups(extracted),
+    residual_fields: residualGroups,
+    unknown_routes,
+    residual_field_count: residualGroups.reduce((acc, item) => acc + (item.keys as string[]).length, 0),
+    unknown_record_count: unknown_routes.reduce((acc, item) => acc + Number(item.count ?? 0), 0),
+  };
+}
+
+function mapDebugGroups(
+  map: Map<string, { table_name: string; count: number; keys: Set<string> }>,
+): JSONDict[] {
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([route_key, entry]) => ({
+      route_key,
+      table_name: entry.table_name,
+      count: entry.count,
+      keys: [...entry.keys].sort(),
+    }));
+}
+
 // ── Public API ──────────────────────────────────────────
 
 export function buildSummary(buffers: ExtractionBuffers): JSONDict {
@@ -290,19 +490,41 @@ export function buildSummary(buffers: ExtractionBuffers): JSONDict {
     "parse_errors", "raw_records", "conversation_meta_raw", "turn_manifest",
     "message_items_raw", "reasoning_items_raw", "tool_calls_raw",
     "tool_call_outputs_raw", "tool_call_pairs", "telemetry_events", "lifecycle_events",
+    "structured_tool_end_events", "collaboration_events", "search_events",
+    "system_events", "compaction_events",
   ] as const) {
     const arr = buffers[key];
     tableCounts[key] = Array.isArray(arr) ? arr.length : 0;
   }
+  const debugBasket = buildDebugBasket(buffers);
+  attachDebugBasket(flatSessions, debugBasket);
+  attachDebugBasket(rootSessions, debugBasket);
 
   return {
     total_files: buffers.file_manifest.length,
     parsed_records: buffers.raw_records.length,
     parse_errors: buffers.parse_errors.length,
+    unknown_record_count: debugBasket.unknown_record_count,
+    unknown_route_keys: Object.keys(buffers.unknown_route_counts).sort(),
     imported_session_count: flatSessions.length,
     root_session_count: rootSessions.length,
     sessions: flatSessions,
     root_sessions: rootSessions,
     table_counts: tableCounts,
+    record_type_counts: buffers.record_type_counts,
+    payload_type_counts: buffers.payload_type_counts,
+    reserved_route_counts: buffers.reserved_route_counts,
+    unknown_route_counts: buffers.unknown_route_counts,
+    debug_basket: debugBasket,
   };
+}
+
+function attachDebugBasket(sessions: JSONDict[], debugBasket: JSONDict): void {
+  for (const session of sessions) {
+    session.debug_basket = debugBasket;
+    const childSessions = Array.isArray(session.child_sessions)
+      ? session.child_sessions as JSONDict[]
+      : [];
+    attachDebugBasket(childSessions, debugBasket);
+  }
 }

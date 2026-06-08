@@ -11,6 +11,7 @@ LIFECYCLE_EVENT_TYPES = {
 }
 
 STRUCTURED_TOOL_END_EVENT_TYPES = {
+    "exec_command_begin",
     "exec_command_end",
     "patch_apply_end",
     "mcp_tool_call_end",
@@ -27,11 +28,17 @@ COLLABORATION_EVENT_TYPES = {
 SYSTEM_EVENT_TYPES = {
     "guardian_assessment",
     "error",
+    "stream_error",
     "thread_rolled_back",
+    "turn_diff",
+    "plan_update",
+    "thread_goal_updated",
+    "hook_started",
+    "hook_completed",
 }
 
 SEARCH_EVENT_TYPES = {
-    "web_search_call",
+    "web_search_begin",
     "web_search_end",
 }
 
@@ -61,6 +68,13 @@ def classify_record(record_type: str, payload_type: str | None) -> Classificatio
             return Classification(
                 "tool_call_outputs_raw",
                 f"response_item.{payload_type}",
+            )
+        if payload_type == "web_search_call":
+            return Classification("search_events", "response_item.web_search_call")
+        if payload_type == "image_generation_call":
+            return Classification(
+                "structured_tool_end_events",
+                "response_item.image_generation_call",
             )
         return Classification(None, f"response_item.{payload_type or 'unknown'}")
 

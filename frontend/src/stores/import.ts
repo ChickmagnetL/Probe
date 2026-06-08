@@ -6,9 +6,11 @@ interface ImportState {
   loading: boolean;
   error: string | null;
   result: ImportResult | null;
+  lastResult: ImportResult | null;
   inputPath: string;
   modalOpen: boolean;
 
+  setInputPath: (path: string) => void;
   openPicker: (directory?: boolean) => Promise<void>;
   startImport: () => Promise<void>;
   reset: () => void;
@@ -20,6 +22,7 @@ export const useImportStore = create<ImportState>((set, get) => ({
   loading: false,
   error: null,
   result: null,
+  lastResult: null,
   inputPath: "",
   modalOpen: false,
 
@@ -40,7 +43,7 @@ export const useImportStore = create<ImportState>((set, get) => ({
     set({ loading: true, error: null, result: null });
     try {
       const res = await invoke.importFiles(inputPath);
-      set({ result: res, loading: false });
+      set({ result: res, lastResult: res, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
     }

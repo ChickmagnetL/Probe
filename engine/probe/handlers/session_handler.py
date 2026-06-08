@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import sqlite3
 from typing import Any
 
+from probe.codex_adapter import parse_codex_rollout
 from probe.storage import get_connection
 from probe.storage import event_dao, rule_result_dao, session_dao
+
+logger = logging.getLogger(__name__)
 
 
 def handle_list(params: dict[str, Any]) -> dict[str, Any]:
@@ -31,6 +36,7 @@ def handle_detail(params: dict[str, Any]) -> dict[str, Any]:
     session = session_dao.get_by_id(conn, session_id)
     if not session:
         raise KeyError(f"session not found: {session_id}")
+    _ensure_debug_basket(conn, session)
 
     events = event_dao.get_by_session_id(conn, session_id)
     children = session_dao.get_children(conn, session_id)
@@ -79,3 +85,44 @@ def handle_delete(params: dict[str, Any]) -> dict[str, Any]:
                 pass  # File already gone or permission denied
 
     return {"deleted_sessions": deleted_count, "deleted_files": deleted_files}
+
+
+def _ensure_debug_basket(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
+    if session.get("debug_basket"):
+        return
+
+    source_path = session.get("source_path")
+    if not isinstance(source_path, str) or not source_path:
+        return
+    if not os.path.exists(source_path):
+        return
+
+    try:
+        summary = parse_codex_rollout(source_path)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        # Best-effort diagnostics rebuild: old imports should still open.
+        logger.warning("could not rebuild debug basket for %s: %s", source_path, exc)
+        return
+    debug_basket = summary.get("debug_basket")
+    if not isinstance(debug_basket, dict):
+        return
+
+    parsed_session_ids = {
+        parsed_session.get("session_id")
+        for parsed_session in summary.get("sessions", [])
+        if isinstance(parsed_session, dict)
+        and isinstance(parsed_session.get("session_id"), str)
+    }
+    session_id = session.get("id")
+    if session_id not in parsed_session_ids:
+        logger.warning(
+            "rebuilt debug basket skipped for %s: session %s not found in %s",
+            source_path,
+            session_id,
+            sorted(parsed_session_ids),
+        )
+        return
+
+    session["debug_basket"] = debug_basket
+    session_dao.update_debug_basket(conn, session_id, debug_basket)
+    conn.commit()

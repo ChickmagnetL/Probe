@@ -9,11 +9,39 @@ export interface ImportResult {
   total_files: number;
   parsed_records: number;
   parse_errors: number;
+  unknown_record_count: number;
+  unknown_route_keys: string[];
   imported_session_count: number;
   root_session_count: number;
   sessions: SessionSummary[];
   root_sessions: SessionSummary[];
   table_counts: Record<string, number>;
+  record_type_counts?: Record<string, number>;
+  payload_type_counts?: Record<string, number>;
+  reserved_route_counts?: Record<string, number>;
+  unknown_route_counts?: Record<string, number>;
+  debug_basket?: DebugBasket;
+}
+
+export interface DebugBasket {
+  extracted_fields: DebugBasketGroup[];
+  residual_fields: DebugBasketGroup[];
+  unknown_routes: DebugBasketUnknownRoute[];
+  residual_field_count: number;
+  unknown_record_count: number;
+}
+
+export interface DebugBasketGroup {
+  route_key: string;
+  table_name: string;
+  count: number;
+  keys: string[];
+}
+
+export interface DebugBasketUnknownRoute {
+  route_key: string;
+  count: number;
+  sources: string[];
 }
 
 export interface SessionMetrics {
@@ -44,6 +72,7 @@ export interface SessionSummary {
   is_synthetic: boolean;
   agent_nickname: string | null;
   agent_role: string | null;
+  cli_version: string | null;
   start_time: string | null;
   end_time: string | null;
   own_metrics: SessionMetrics;
@@ -52,6 +81,7 @@ export interface SessionSummary {
   timeline: SessionEvent[];
   graph_turns: GraphTurn[];
   child_sessions: SessionSummary[];
+  debug_basket?: DebugBasket | null;
 }
 
 export interface GraphTurn {
@@ -81,6 +111,7 @@ export interface SessionRow {
   start_time: string | null;
   end_time: string | null;
   imported_at: string;
+  debug_basket?: DebugBasket | null;
 }
 
 export interface EventRow {
@@ -121,6 +152,11 @@ export interface SessionEvent {
   raw_record_id?: string;
   source_path?: string;
   source_line_no?: number;
+  raw_text?: string;
+  source_record?: Record<string, unknown> | null;
+  event_type?: string;
+  extracted_fields?: unknown[];
+  extra_fields?: Record<string, unknown>;
 }
 
 export interface UsageBadge {

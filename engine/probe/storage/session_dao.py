@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
@@ -9,8 +10,9 @@ from typing import Any
 def upsert(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
     conn.execute(
         """INSERT INTO sessions (id, source_path, file_name, parent_session_id,
-               is_subagent, agent_nickname, agent_role, start_time, end_time)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               is_subagent, agent_nickname, agent_role, start_time, end_time,
+               debug_basket)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
                source_path=excluded.source_path,
                file_name=excluded.file_name,
@@ -19,7 +21,8 @@ def upsert(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
                agent_nickname=excluded.agent_nickname,
                agent_role=excluded.agent_role,
                start_time=excluded.start_time,
-               end_time=excluded.end_time""",
+               end_time=excluded.end_time,
+               debug_basket=excluded.debug_basket""",
         (
             session["id"],
             session.get("source_path"),
@@ -30,6 +33,7 @@ def upsert(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
             session.get("agent_role"),
             session.get("start_time"),
             session.get("end_time"),
+            _to_json(session.get("debug_basket")),
         ),
     )
 
@@ -43,7 +47,7 @@ def get_by_id(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] | Non
     row = conn.execute(
         "SELECT * FROM sessions WHERE id = ?", (session_id,)
     ).fetchone()
-    return dict(row) if row else None
+    return _row_to_session(row) if row else None
 
 
 def list_sessions(
@@ -82,7 +86,7 @@ def list_sessions(
         params + [limit, offset],
     ).fetchall()
 
-    return [dict(r) for r in rows], total
+    return [_row_to_session(r) for r in rows], total
 
 
 def get_children(conn: sqlite3.Connection, parent_id: str) -> list[dict[str, Any]]:
@@ -90,7 +94,7 @@ def get_children(conn: sqlite3.Connection, parent_id: str) -> list[dict[str, Any
         "SELECT * FROM sessions WHERE parent_session_id = ? ORDER BY start_time",
         (parent_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [_row_to_session(r) for r in rows]
 
 
 def delete_by_id(conn: sqlite3.Connection, session_id: str) -> None:
@@ -104,3 +108,39 @@ def delete_many(conn: sqlite3.Connection, session_ids: list[str]) -> int:
         f"DELETE FROM sessions WHERE id IN ({placeholders})", session_ids
     )
     return cursor.rowcount
+
+
+def update_debug_basket(
+    conn: sqlite3.Connection,
+    session_id: str,
+    debug_basket: dict[str, Any],
+) -> None:
+    conn.execute(
+        "UPDATE sessions SET debug_basket = ? WHERE id = ?",
+        (_to_json(debug_basket), session_id),
+    )
+
+
+def _to_json(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _row_to_session(row: sqlite3.Row) -> dict[str, Any]:
+    session = dict(row)
+    raw_debug_basket = session.get("debug_basket")
+    if raw_debug_basket is None:
+        return session
+    if not isinstance(raw_debug_basket, str) or not raw_debug_basket:
+        session["debug_basket"] = None
+        return session
+
+    try:
+        debug_basket = json.loads(raw_debug_basket)
+    except (json.JSONDecodeError, TypeError):
+        session["debug_basket"] = None
+        return session
+
+    session["debug_basket"] = debug_basket if isinstance(debug_basket, dict) else None
+    return session

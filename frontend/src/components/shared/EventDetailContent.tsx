@@ -210,8 +210,12 @@ export function MetadataSection({
     parsed && typeof parsed === "object" && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>).raw_text
       : null;
+  const hasStructuredFields =
+    parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? Object.keys(parsed as Record<string, unknown>).some((key) => key !== "raw_text" && key !== "source_record")
+      : false;
 
-  const displayValue = rawText ?? parsed;
+  const displayValue = hasStructuredFields ? parsed : rawText ?? parsed;
 
   return (
     <details className="rounded-md border border-border overflow-hidden group">

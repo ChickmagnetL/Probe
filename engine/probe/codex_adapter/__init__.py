@@ -9,13 +9,10 @@ from .reader import discover_rollout_files, iter_parsed_lines
 from .summary import build_summary
 from .writer import write_outputs
 
-__all__ = ["run_codex_rollout_demo"]
+__all__ = ["parse_codex_rollout", "run_codex_rollout_demo"]
 
 
-def run_codex_rollout_demo(
-    input_path: str | Path,
-    output_dir: str | Path,
-) -> dict[str, Any]:
+def _extract_buffers(input_path: str | Path) -> ExtractionBuffers:
     buffers = ExtractionBuffers()
     rollout_files = discover_rollout_files(input_path)
 
@@ -41,6 +38,19 @@ def run_codex_rollout_demo(
 
         buffers.file_manifest.append(file_context.to_manifest_entry())
 
+    return buffers
+
+
+def parse_codex_rollout(input_path: str | Path) -> dict[str, Any]:
+    buffers = _extract_buffers(input_path)
+    return build_summary(buffers)
+
+
+def run_codex_rollout_demo(
+    input_path: str | Path,
+    output_dir: str | Path,
+) -> dict[str, Any]:
+    buffers = _extract_buffers(input_path)
     summary = build_summary(buffers)
     write_outputs(output_dir, buffers, summary)
     return summary

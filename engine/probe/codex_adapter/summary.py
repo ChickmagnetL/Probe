@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import ExtractionBuffers, REQUIRED_JSONL_TABLES
+from .models import ExtractionBuffers, OPTIONAL_JSONL_TABLES, REQUIRED_JSONL_TABLES
 from .token_estimator import estimate_text_tokens
 
 EVENT_ORDER = {
@@ -16,7 +16,11 @@ EVENT_ORDER = {
     "instruction": 20,
     "assistant_update": 40,
     "tool_call": 50,
+    "tool_event": 55,
     "tool_output": 60,
+    "search_event": 62,
+    "system_event": 64,
+    "compaction_event": 66,
     "assistant_output": 70,
     "subagent_session": 80,
 }
@@ -27,7 +31,11 @@ ASSISTANT_SIDE_KINDS = {
     "assistant_update",
     "assistant_output",
     "tool_call",
+    "tool_event",
     "tool_output",
+    "search_event",
+    "system_event",
+    "compaction_event",
     "subagent_session",
 }
 INPUT_DETAIL_TITLE = {
@@ -79,6 +87,7 @@ class SessionBuild:
     is_synthetic: bool = False
     agent_nickname: str | None = None
     agent_role: str | None = None
+    cli_version: str | None = None
     start_time: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     telemetry: list[dict[str, Any]] = field(default_factory=list)
@@ -105,16 +114,29 @@ def build_summary(buffers: ExtractionBuffers) -> dict[str, Any]:
         _serialize_tree(session_id, sessions)
         for session_id in _sorted_root_session_ids(sessions)
     ]
+    debug_basket = _build_debug_basket(buffers)
+    _attach_debug_basket(flat_sessions, debug_basket)
+    _attach_debug_basket(root_sessions, debug_basket)
 
     return {
         "total_files": len(buffers.file_manifest),
         "parsed_records": len(buffers.raw_records),
         "parse_errors": len(buffers.parse_errors),
+        "unknown_record_count": debug_basket["unknown_record_count"],
+        "unknown_route_keys": sorted(buffers.unknown_route_counts.keys()),
         "imported_session_count": len(flat_sessions),
         "root_session_count": len(root_sessions),
         "sessions": flat_sessions,
         "root_sessions": root_sessions,
-        "table_counts": {k: len(getattr(buffers, k)) for k in REQUIRED_JSONL_TABLES},
+        "table_counts": {
+            k: len(getattr(buffers, k))
+            for k in (*REQUIRED_JSONL_TABLES, *OPTIONAL_JSONL_TABLES)
+        },
+        "record_type_counts": dict(sorted(buffers.record_type_counts.items())),
+        "payload_type_counts": dict(sorted(buffers.payload_type_counts.items())),
+        "reserved_route_counts": dict(sorted(buffers.reserved_route_counts.items())),
+        "unknown_route_counts": dict(sorted(buffers.unknown_route_counts.items())),
+        "debug_basket": debug_basket,
     }
 
 
@@ -164,6 +186,7 @@ def _seed_sessions(
         session.agent_role = session.agent_role or _string(row.get("agent_role")) or _string(
             thread_spawn.get("agent_role")
         )
+        session.cli_version = _string(row.get("cli_version"))
         session.start_time = _string(row.get("conversation_started_at")) or _string(
             row.get("timestamp")
         )
@@ -295,6 +318,22 @@ def _collect_events(
         session = _session_for_row(row, sessions, source_to_session_id)
         session.lifecycle.append(dict(row))
 
+    for row in buffers.structured_tool_end_events:
+        session = _session_for_row(row, sessions, source_to_session_id)
+        session.events.append(_build_parser_event(row, session.session_id, "tool_event"))
+
+    for row in buffers.search_events:
+        session = _session_for_row(row, sessions, source_to_session_id)
+        session.events.append(_build_parser_event(row, session.session_id, "search_event"))
+
+    for row in buffers.system_events:
+        session = _session_for_row(row, sessions, source_to_session_id)
+        session.events.append(_build_parser_event(row, session.session_id, "system_event"))
+
+    for row in buffers.compaction_events:
+        session = _session_for_row(row, sessions, source_to_session_id)
+        session.events.append(_build_parser_event(row, session.session_id, "compaction_event"))
+
 
 def _ensure_synthetic_roots(sessions: dict[str, SessionBuild]) -> None:
     parent_ids = {
@@ -420,6 +459,7 @@ def _session_payload(
         "is_synthetic": session.is_synthetic,
         "agent_nickname": session.agent_nickname,
         "agent_role": session.agent_role,
+        "cli_version": session.cli_version,
         "start_time": start_time,
         "end_time": end_time,
         "own_metrics": own_metrics,
@@ -1122,6 +1162,216 @@ def _build_tool_output_event(row: dict[str, Any], session_id: str) -> dict[str, 
         "source_line_no": row.get("source_line_no"),
         "raw_text": row.get("raw_text"),
     }
+
+
+def _build_parser_event(
+    row: dict[str, Any],
+    session_id: str,
+    kind: str,
+) -> dict[str, Any]:
+    event_type = _string(row.get("event_type")) or _string(row.get("payload_type")) or "event"
+    content = _event_content(row, event_type)
+    return {
+        "event_id": row.get("event_id") or row.get("raw_record_id"),
+        "session_id": session_id,
+        "timestamp": row.get("timestamp"),
+        "kind": kind,
+        "role": None,
+        "phase": None,
+        "title": _event_title(event_type),
+        "summary": _truncate(_event_summary(row, event_type, content), 120),
+        "content": content,
+        "content_label": "事件详情",
+        "detail_note": _string(row.get("status")) or _string(row.get("error_type")),
+        "raw_record_id": row.get("raw_record_id"),
+        "source_path": row.get("source_path"),
+        "source_line_no": row.get("source_line_no"),
+        "raw_text": row.get("raw_text"),
+        "event_type": event_type,
+    }
+
+
+def _event_title(event_type: str) -> str:
+    return {
+        "exec_command_begin": "命令开始",
+        "exec_command_end": "命令结果",
+        "patch_apply_end": "文件修改结果",
+        "mcp_tool_call_end": "外部工具结果",
+        "view_image_tool_call": "查看图片",
+        "image_generation_call": "图片生成",
+        "web_search_call": "网页搜索",
+        "web_search_begin": "网页搜索开始",
+        "web_search_end": "网页搜索结果",
+        "guardian_assessment": "安全审查",
+        "error": "错误",
+        "stream_error": "流错误",
+        "thread_rolled_back": "线程回滚",
+        "turn_diff": "回合变更",
+        "plan_update": "计划更新",
+        "thread_goal_updated": "目标更新",
+        "context_compacted": "上下文压缩",
+    }.get(event_type, event_type)
+
+
+def _event_content(row: dict[str, Any], event_type: str) -> str | None:
+    if event_type in {"exec_command_end", "exec_command_begin"}:
+        lines = [
+            f"$ {row.get('command_text')}" if _string(row.get("command_text")) else None,
+            f"exit_code: {row.get('exit_code')}" if isinstance(row.get("exit_code"), int) else None,
+            f"status: {row.get('status')}" if _string(row.get("status")) else None,
+            _string(row.get("aggregated_output"))
+            or _string(row.get("formatted_output"))
+            or _string(row.get("stdout"))
+            or _string(row.get("stderr")),
+        ]
+        compact = [line for line in lines if line]
+        return "\n".join(compact) if compact else _jsonish_text(row.get("payload"))
+    if event_type == "patch_apply_end":
+        return (
+            _first_unified_diff(row.get("changes"))
+            or _string(row.get("stdout"))
+            or _jsonish_text(row.get("changes"))
+        )
+    if event_type in {"web_search_call", "web_search_begin", "web_search_end"}:
+        return (
+            _string(row.get("query"))
+            or _jsonish_text(row.get("results"))
+            or _jsonish_text(row.get("sources"))
+            or _jsonish_text(row.get("action"))
+        )
+    if event_type == "guardian_assessment":
+        return _string(row.get("rationale")) or _jsonish_text(row.get("action"))
+    if event_type in {"error", "stream_error"}:
+        return _string(row.get("message")) or _jsonish_text(row.get("additional_details"))
+    if event_type == "turn_diff":
+        return _string(row.get("unified_diff")) or _jsonish_text(row.get("changes"))
+    if event_type == "plan_update":
+        return _jsonish_text(row.get("plan")) or _string(row.get("explanation"))
+    return (
+        _string(row.get("message"))
+        or _string(row.get("summary"))
+        or _jsonish_text(row.get("payload"))
+    )
+
+
+def _event_summary(
+    row: dict[str, Any],
+    event_type: str,
+    content: str | None,
+) -> str:
+    if event_type in {"exec_command_end", "exec_command_begin"}:
+        command = _string(row.get("command_text"))
+        exit_note = f" exit {row.get('exit_code')}" if isinstance(row.get("exit_code"), int) else ""
+        return f"{command}{exit_note}" if command else (content or event_type)
+    if event_type == "patch_apply_end":
+        changes = row.get("changes")
+        count = len(changes) if isinstance(changes, dict) else 0
+        return f"{count} file change{'s' if count != 1 else ''}" if count else (content or event_type)
+    if event_type == "thread_rolled_back" and isinstance(row.get("num_turns"), int):
+        return f"{row.get('num_turns')} turn(s) rolled back"
+    return content or _string(row.get("status")) or event_type
+
+
+def _first_unified_diff(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    for item in value.values():
+        if not isinstance(item, dict):
+            continue
+        diff = _string(item.get("unified_diff"))
+        if diff:
+            return diff
+    return None
+
+
+def _build_debug_basket(buffers: ExtractionBuffers) -> dict[str, Any]:
+    extracted: dict[str, dict[str, Any]] = {}
+    residual: dict[str, dict[str, Any]] = {}
+    table_names = (
+        "conversation_meta_raw",
+        "turn_manifest",
+        "message_items_raw",
+        "reasoning_items_raw",
+        "tool_calls_raw",
+        "tool_call_outputs_raw",
+        "telemetry_events",
+        "lifecycle_events",
+        "structured_tool_end_events",
+        "collaboration_events",
+        "search_events",
+        "system_events",
+        "compaction_events",
+    )
+
+    for table_name in table_names:
+        for row in getattr(buffers, table_name):
+            route_key = _string(row.get("route_key")) or table_name
+            extracted_fields = row.get("extracted_fields")
+            if isinstance(extracted_fields, list) and extracted_fields:
+                entry = extracted.setdefault(
+                    route_key,
+                    {"table_name": table_name, "count": 0, "keys": set()},
+                )
+                entry["count"] += 1
+                for key in extracted_fields:
+                    if isinstance(key, str):
+                        entry["keys"].add(key)
+
+            extra_fields = row.get("extra_fields")
+            if isinstance(extra_fields, dict) and extra_fields:
+                entry = residual.setdefault(
+                    route_key,
+                    {"table_name": table_name, "count": 0, "keys": set()},
+                )
+                entry["count"] += 1
+                for key in extra_fields:
+                    entry["keys"].add(key)
+
+    unknown_routes = [
+        {
+            "route_key": route_key,
+            "count": count,
+            "sources": [
+                f"{row.get('source_path')}:{row.get('source_line_no')}"
+                for row in buffers.raw_records
+                if row.get("route_key") == route_key and row.get("route_table") is None
+            ][:8],
+        }
+        for route_key, count in sorted(buffers.unknown_route_counts.items())
+    ]
+    residual_groups = _debug_groups(residual)
+    return {
+        "extracted_fields": _debug_groups(extracted),
+        "residual_fields": residual_groups,
+        "unknown_routes": unknown_routes,
+        "residual_field_count": sum(len(row["keys"]) for row in residual_groups),
+        "unknown_record_count": sum(int(row["count"]) for row in unknown_routes),
+    }
+
+
+def _debug_groups(groups: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for route_key, entry in sorted(groups.items()):
+        rows.append(
+            {
+                "route_key": route_key,
+                "table_name": entry["table_name"],
+                "count": entry["count"],
+                "keys": sorted(entry["keys"]),
+            }
+        )
+    return rows
+
+
+def _attach_debug_basket(
+    sessions: list[dict[str, Any]],
+    debug_basket: dict[str, Any],
+) -> None:
+    for session in sessions:
+        session["debug_basket"] = debug_basket
+        child_sessions = session.get("child_sessions")
+        if isinstance(child_sessions, list):
+            _attach_debug_basket(child_sessions, debug_basket)
 
 
 def _build_telemetry_snapshot(row: dict[str, Any]) -> dict[str, Any]:

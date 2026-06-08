@@ -17,6 +17,7 @@ export interface SessionBuild {
   is_synthetic: boolean;
   agent_nickname: string | null;
   agent_role: string | null;
+  cli_version: string | null;
   start_time: string | null;
   events: JSONDict[];
   telemetry: JSONDict[];
@@ -40,6 +41,7 @@ export function createSession(session_id: string): SessionBuild {
     is_synthetic: false,
     agent_nickname: null,
     agent_role: null,
+    cli_version: null,
     start_time: null,
     events: [],
     telemetry: [],
@@ -149,6 +151,7 @@ export function sessionPayload(
     is_synthetic: session.is_synthetic,
     agent_nickname: session.agent_nickname,
     agent_role: session.agent_role,
+    cli_version: session.cli_version,
     start_time: startTime,
     end_time: endTime,
     own_metrics: ownMetrics,

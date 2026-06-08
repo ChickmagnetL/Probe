@@ -50,7 +50,11 @@ const EVENT_ORDER: Record<string, number> = {
   instruction: 20,
   assistant_update: 40,
   tool_call: 50,
+  tool_event: 55,
   tool_output: 60,
+  search_event: 62,
+  system_event: 64,
+  compaction_event: 66,
   assistant_output: 70,
   subagent_session: 80,
 };
