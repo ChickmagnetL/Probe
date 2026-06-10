@@ -334,10 +334,7 @@ export function GraphCanvas({
         }
         // Update tooltip state when hovering
         if (node) {
-          const rect = canvas?.getBoundingClientRect();
-          if (rect) {
-            setTooltipNode({ node, x: mx - rect.left, y: my - rect.top });
-          }
+          setTooltipNode({ node, x: mx, y: my });
         } else {
           setTooltipNode(null);
         }
@@ -350,6 +347,11 @@ export function GraphCanvas({
         // Clear tooltip on click
         setTooltipNode(null);
         if (node) onNodeClick(node.eventId);
+      },
+      () => {
+        setTooltipNode(null);
+        hoveredNodeIdRef.current = null;
+        dirtyRef.current = true;
       },
     );
   }, [onNodeClick]);

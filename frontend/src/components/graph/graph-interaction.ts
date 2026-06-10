@@ -10,6 +10,7 @@ export function createInteractionHandlers(
   setTransform: (t: Transform) => void,
   onHover: (x: number, y: number) => void,
   onClick: (x: number, y: number) => void,
+  onMouseLeave?: () => void,
 ) {
   let isPanning = false;
   let startX = 0;
@@ -78,10 +79,14 @@ export function createInteractionHandlers(
     setTransform({ x: 0, y: 0, k: 1 });
   }
 
+  function handleMouseLeave() {
+    onMouseLeave?.();
+  }
+
   canvas.addEventListener("mousedown", onMouseDown);
   canvas.addEventListener("mousemove", onMouseMove);
   canvas.addEventListener("mouseup", onMouseUp);
-  canvas.addEventListener("mouseleave", onMouseUp);
+  canvas.addEventListener("mouseleave", handleMouseLeave);
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("dblclick", onDblClick);
 
@@ -89,7 +94,7 @@ export function createInteractionHandlers(
     canvas.removeEventListener("mousedown", onMouseDown);
     canvas.removeEventListener("mousemove", onMouseMove);
     canvas.removeEventListener("mouseup", onMouseUp);
-    canvas.removeEventListener("mouseleave", onMouseUp);
+    canvas.removeEventListener("mouseleave", handleMouseLeave);
     canvas.removeEventListener("wheel", onWheel);
     canvas.removeEventListener("dblclick", onDblClick);
   };
