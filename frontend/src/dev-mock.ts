@@ -55,7 +55,10 @@ function getSessionDetail(sessionId: string): SessionDetail | null {
   const events = ((target.events as JSONDict[]) ?? []).map(eventToRow);
   const children = ((target.child_sessions as JSONDict[]) ?? [])
     .filter((cs) => !cs.is_synthetic)
-    .map(sessionSummaryToRow);
+    .map((cs) => {
+      const childEvents = ((cs.events as JSONDict[]) ?? []).map(eventToRow);
+      return { ...sessionSummaryToRow(cs), events: childEvents };
+    });
 
   return {
     session: sessionSummaryToRow(target),

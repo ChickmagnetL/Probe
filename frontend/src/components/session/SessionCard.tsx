@@ -10,6 +10,10 @@ interface SessionCardProps {
   onClick: () => void;
   onToggleSelect: () => void;
   cardRef?: (el: HTMLDivElement | null) => void;
+  depth?: number;
+  hasChildren?: boolean;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
 }
 
 function roleAccent(role: string | null | undefined): string {
@@ -23,10 +27,14 @@ function roleAccent(role: string | null | undefined): string {
   }
 }
 
-export const SessionCard = memo(function SessionCard({ session, isActive, selected, selectionMode, onClick, onToggleSelect, cardRef }: SessionCardProps) {
+export const SessionCard = memo(function SessionCard({
+  session, isActive, selected, selectionMode, onClick, onToggleSelect, cardRef,
+  depth, hasChildren, isExpanded, onToggleExpand,
+}: SessionCardProps) {
   const label = session.agent_nickname ?? session.file_name ?? session.id;
   const ts = session.start_time ?? session.imported_at;
   const dotColor = roleAccent(session.agent_role);
+  const indent = depth ? depth * 16 : 0;
 
   return (
     <div
@@ -39,8 +47,27 @@ export const SessionCard = memo(function SessionCard({ session, isActive, select
             ? "hover:bg-primary/10 border-transparent"
             : "hover:bg-muted hover:border-border border-transparent"
       }`}
+      style={{ paddingLeft: `${12 + indent}px` }}
     >
       <div className="flex items-start gap-3">
+        {/* Expand/collapse arrow */}
+        {hasChildren && !selectionMode && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }}
+            className="mt-0.5 shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-muted transition-colors"
+            type="button"
+            aria-label={isExpanded ? "Collapse children" : "Expand children"}
+          >
+            <svg
+              width="12" height="12" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" strokeWidth="2.5"
+              strokeLinecap="round" strokeLinejoin="round"
+              className={`transition-transform duration-200 ${isExpanded ? "rotate-90" : ""} text-muted-foreground`}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        )}
         {/* Checkbox — only visible in selection mode */}
         {selectionMode && (
           <div className="mt-0.5 shrink-0">
@@ -73,6 +100,13 @@ export const SessionCard = memo(function SessionCard({ session, isActive, select
                 isActive ? "bg-white/15 text-white/80" : "bg-muted text-muted-foreground"
               }`}>
                 {session.agent_role}
+              </span>
+            )}
+            {session.is_subagent === 1 && (
+              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider transition-colors duration-150 ${
+                isActive ? "bg-white/10 text-white/60" : "bg-muted text-muted-foreground/60"
+              }`}>
+                sub
               </span>
             )}
             <span className={`text-xs transition-colors duration-150 ${isActive ? "text-white/50" : "text-muted-foreground"}`}>{formatRelative(ts)}</span>

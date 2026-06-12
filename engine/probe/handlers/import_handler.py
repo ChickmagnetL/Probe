@@ -102,5 +102,7 @@ def _to_event_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "detail_note": e.get("detail_note"),
             "extracted_fields": e.get("extracted_fields"),
             "extra_fields": e.get("extra_fields"),
+            "child_session_id": e.get("child_session_id"),
+            "prompt_preview": e.get("prompt_preview"),
         })
     return rows

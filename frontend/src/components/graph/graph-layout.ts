@@ -149,6 +149,7 @@ export function buildGraphFromTurns(
   startX = PADDING,
   startY = PADDING,
   overrides?: { RPeak?: number; pitch?: number },
+  sessionId?: string,
 ): GraphData & { totalWidth: number; totalHeight: number } {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
@@ -167,7 +168,7 @@ export function buildGraphFromTurns(
   let lastAnchorId: string | null = null;
 
   for (const turn of turns) {
-    const result = layoutTurn(turn, startX, currentY, sessionMap, overrides);
+    const result = layoutTurn(turn, startX, currentY, sessionMap, overrides, sessionId);
     // Link from previous turn's anchor to this turn's input anchor
     if (lastAnchorId && result.nodes.length > 0) {
       const target = result.nodes.find(n => n.isInput) ?? result.nodes[0];
@@ -293,6 +294,7 @@ function layoutTurn(
   originY: number,
   sessionMap: Map<string, ChildSession>,
   overrides?: { RPeak?: number; pitch?: number },
+  sessionId?: string,
 ): { nodes: GraphNode[]; links: GraphLink[]; spindles: TurnSpindle[]; nextY: number } {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
@@ -320,6 +322,7 @@ function layoutTurn(
       isAnchor: true,
       isInput: true,
       spindleRole: "anchor",
+      sessionId,
       metadata: ev as Record<string, unknown>,
     };
     nodes.push(node);
@@ -423,6 +426,7 @@ function layoutTurn(
         isAnchor: true,
         isInput: i === 0,
         spindleRole: "anchor",
+        sessionId,
         metadata: ev as Record<string, unknown>,
       };
       nodes.push(node);
@@ -442,6 +446,7 @@ function layoutTurn(
         isAnchor: false,
         isInput: false,
         spindleRole: "intermediate",
+        sessionId,
         metadata: ev as Record<string, unknown>,
       };
       nodes.push(node);
@@ -494,6 +499,7 @@ function layoutTurn(
       subCX,
       subTop,
       { RPeak: cRPeak, pitch: cPitch },
+      child.session_id,
     );
 
     nodes.push(...childData.nodes);

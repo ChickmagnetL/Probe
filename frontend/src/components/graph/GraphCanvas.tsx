@@ -19,7 +19,8 @@ interface GraphCanvasProps {
   events?: EventRow[];
   childSessions?: ChildSession[];
   selectedEventId: string | null;
-  onNodeClick: (eventId: string) => void;
+  selectedSessionId?: string;
+  onNodeClick: (eventId: string | null) => void;
 }
 
 function sizeCanvasToContainer(
@@ -55,6 +56,7 @@ export function GraphCanvas({
   events,
   childSessions,
   selectedEventId,
+  selectedSessionId,
   onNodeClick,
 }: GraphCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -77,8 +79,10 @@ export function GraphCanvas({
   // Stable refs for draw loop
   const selectedEventIdRef = useRef(selectedEventId);
   const labelsVisibleRef = useRef(labelsVisible);
+  const selectedSessionIdRef = useRef(selectedSessionId);
   selectedEventIdRef.current = selectedEventId;
   labelsVisibleRef.current = labelsVisible;
+  selectedSessionIdRef.current = selectedSessionId;
 
   // Build graph data
   useEffect(() => {
@@ -90,7 +94,7 @@ export function GraphCanvas({
       return;
     }
 
-    const result = buildGraphFromTurns(turns, childSessions);
+    const result = buildGraphFromTurns(turns, childSessions, undefined, undefined, undefined, selectedSessionId);
     const newData: GraphData = {
       nodes: result.nodes,
       links: result.links,
@@ -198,6 +202,7 @@ export function GraphCanvas({
     const hoveredNodeId = hoveredNodeIdRef.current;
     const selectedNodeId = selectedEventIdRef.current;
     const labelsVisible = labelsVisibleRef.current;
+    const selectedSessionId = selectedSessionIdRef.current;
 
     const viewport: ViewportBounds = {
       x: -t.x / t.k,
@@ -205,6 +210,21 @@ export function GraphCanvas({
       w: rect.width / t.k,
       h: rect.height / t.k,
     };
+
+    // Compute highlight set: event-based takes priority, then session-based
+    let highlightIds: Set<string> | null = null;
+    if (selectedNodeId) {
+      highlightIds = new Set([selectedNodeId]);
+      const adj = data.adjacencyMap.get(selectedNodeId);
+      if (adj) for (const id of adj) highlightIds.add(id);
+    } else if (selectedSessionId) {
+      highlightIds = new Set<string>();
+      for (const node of data.nodes) {
+        if (node.sessionId === selectedSessionId) {
+          highlightIds.add(node.id);
+        }
+      }
+    }
 
     // LOD mode: skip cache, render directly with culling
     if (t.k < 0.3) {
@@ -216,7 +236,7 @@ export function GraphCanvas({
         selectedNodeId,
         labelsVisible,
       };
-      renderLODLayer(ctx, data, state, rect.width, rect.height, viewport);
+      renderLODLayer(ctx, data, state, rect.width, rect.height, viewport, highlightIds);
       return;
     }
 
@@ -241,7 +261,7 @@ export function GraphCanvas({
         offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         offCtx.clearRect(0, 0, w, h);
         offCtx.translate(-bounds.minX, -bounds.minY);
-        renderStaticLayer(offCtx, data, selectedNodeId);
+        renderStaticLayer(offCtx, data, selectedNodeId, highlightIds);
       }
       cacheDirtyRef.current = false;
     }
@@ -250,7 +270,7 @@ export function GraphCanvas({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    // 绘制背景网格点
+    // Draw background grid dots
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.scale(t.k, t.k);
@@ -277,7 +297,7 @@ export function GraphCanvas({
     ctx.restore();
 
     // Labels rendered directly on main canvas for crisp text
-    renderLabels(ctx, data, t, selectedNodeId, hoveredNodeId, labelsVisible, viewport);
+    renderLabels(ctx, data, t, selectedNodeId, hoveredNodeId, labelsVisible, viewport, highlightIds);
 
     // Dynamic hover overlay
     renderDynamicOverlay(ctx, data, t, hoveredNodeId);
@@ -346,7 +366,12 @@ export function GraphCanvas({
         const node = hitTest(data.nodes, mx, my, transformRef.current, getViewport());
         // Clear tooltip on click
         setTooltipNode(null);
-        if (node) onNodeClick(node.eventId);
+        if (node) {
+          onNodeClick(node.eventId);
+        } else {
+          // Click on blank area: clear event selection, revert to session dimming
+          onNodeClick(null);
+        }
       },
       () => {
         setTooltipNode(null);

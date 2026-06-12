@@ -246,16 +246,20 @@ export function renderStaticLayer(
   ctx: CanvasRenderingContext2D,
   data: GraphData,
   selectedNodeId: string | null,
+  highlightIds?: Set<string> | null,
 ) {
   const { nodes, links, nodeMap, adjacencyMap, spindles } = data;
 
   const focusId = selectedNodeId;
-  const connectedIds = new Set<string>();
-  if (focusId) {
-    connectedIds.add(focusId);
-    const adj = adjacencyMap.get(focusId);
-    if (adj) for (const id of adj) connectedIds.add(id);
-  }
+  const connectedIds = highlightIds ?? (() => {
+    const ids = new Set<string>();
+    if (focusId) {
+      ids.add(focusId);
+      const adj = adjacencyMap.get(focusId);
+      if (adj) for (const id of adj) ids.add(id);
+    }
+    return ids;
+  })();
   const isDimming = connectedIds.size > 0;
 
   // ── Draw spindle ribbons ──────────────────────────────
@@ -401,17 +405,21 @@ export function renderLabels(
   hoveredNodeId: string | null,
   labelsVisible: boolean,
   viewport: ViewportBounds,
+  highlightIds?: Set<string> | null,
 ) {
   if (!labelsVisible || transform.k < 0.5) return;
 
   const { nodes, adjacencyMap } = data;
-  const connectedIds = new Set<string>();
-  const focusId = hoveredNodeId ?? selectedNodeId;
-  if (focusId) {
-    connectedIds.add(focusId);
-    const adj = adjacencyMap.get(focusId);
-    if (adj) for (const id of adj) connectedIds.add(id);
-  }
+  const connectedIds = highlightIds ?? (() => {
+    const ids = new Set<string>();
+    const focusId = hoveredNodeId ?? selectedNodeId;
+    if (focusId) {
+      ids.add(focusId);
+      const adj = adjacencyMap.get(focusId);
+      if (adj) for (const id of adj) ids.add(id);
+    }
+    return ids;
+  })();
   const isDimming = connectedIds.size > 0;
 
   ctx.save();
@@ -443,6 +451,7 @@ export function renderLODLayer(
   width: number,
   height: number,
   viewport: ViewportBounds,
+  highlightIds?: Set<string> | null,
 ) {
   const { transform, hoveredNodeId, selectedNodeId, labelsVisible } = state;
   const { nodes, links, nodeMap, adjacencyMap, spindles } = data;
@@ -453,12 +462,15 @@ export function renderLODLayer(
   ctx.scale(transform.k, transform.k);
 
   const focusId = hoveredNodeId ?? selectedNodeId;
-  const connectedIds = new Set<string>();
-  if (focusId) {
-    connectedIds.add(focusId);
-    const adj = adjacencyMap.get(focusId);
-    if (adj) for (const id of adj) connectedIds.add(id);
-  }
+  const connectedIds = highlightIds ?? (() => {
+    const ids = new Set<string>();
+    if (focusId) {
+      ids.add(focusId);
+      const adj = adjacencyMap.get(focusId);
+      if (adj) for (const id of adj) ids.add(id);
+    }
+    return ids;
+  })();
   const isDimming = connectedIds.size > 0;
   const drawLabels = labelsVisible && transform.k >= 0.5;
   const skipDetails = transform.k < 0.3;

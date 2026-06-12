@@ -4,9 +4,10 @@ import { useSessionStore } from "../../stores/session";
 import { DraggableDivider } from "./DraggableDivider";
 import { SplitMenu } from "./SplitMenu";
 import type { LayoutNode, ViewKind } from "../../stores/panel";
-import type { EventRow } from "../../ipc/types"; // used in sortedEvents selector
+import type { EventRow, ChildSessionDetail } from "../../ipc/types";
 import { GraphCanvas } from "../graph/GraphCanvas";
 import type { ChildSession } from "../graph/graph-layout";
+import { buildTurnsFromEvents } from "../graph/graph-layout";
 import { TimelineView } from "../timeline/TimelineView";
 import { ConversationView } from "../conversation/ConversationView";
 import { RawView } from "../raw/RawView";
@@ -215,6 +216,7 @@ function PanelViewContent({ view }: PanelViewContentProps) {
   const selectedEventId = useSessionStore((s) => s.selectedEventId);
   const selectEvent = useSessionStore((s) => s.selectEvent);
 
+  // Timeline/Chat data: always from the currently selected session
   const sortedEvents = useMemo(() => {
     if (!detail?.events) return [] as EventRow[];
     return [...detail.events].sort((a, b) => {
@@ -228,20 +230,60 @@ function PanelViewContent({ view }: PanelViewContentProps) {
     });
   }, [detail?.events]);
 
-  // R5: Convert detail.children (SessionRow[]) to ChildSession[] for GraphCanvas
+  // Graph data: independent from Timeline/Chat per PRD D3.
+  // When a child sub-agent is selected, Graph must continue showing the parent's
+  // merged data (parent events + all child events), not the child's own events.
+  // We use a ref to persist the last non-subagent detail for graph rendering.
+  const graphDetailRef = useRef<{
+    events: EventRow[];
+    children: ChildSessionDetail[];
+    sessionId: string;
+  } | null>(null);
+
+  // Update graphDetailRef only when the selected session is NOT a sub-agent
+  if (detail && detail.session.is_subagent !== 1) {
+    graphDetailRef.current = {
+      events: detail.events,
+      children: detail.children,
+      sessionId: detail.session.id,
+    };
+  }
+
+  const graphDetail = graphDetailRef.current ?? (detail && detail.session.is_subagent !== 1 ? {
+    events: detail.events,
+    children: detail.children,
+    sessionId: detail.session.id,
+  } : null);
+
+  const graphEvents = useMemo(() => {
+    if (!graphDetail?.events) return [] as EventRow[];
+    return [...graphDetail.events].sort((a, b) => {
+      if (!a.timestamp && !b.timestamp)
+        return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
+      if (!a.timestamp) return 1;
+      if (!b.timestamp) return -1;
+      const cmp = a.timestamp.localeCompare(b.timestamp);
+      if (cmp !== 0) return cmp;
+      return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
+    });
+  }, [graphDetail?.events]);
+
+  // R5: Convert graphDetail.children to ChildSession[] for GraphCanvas
   const childSessions = useMemo((): ChildSession[] | undefined => {
-    if (!detail?.children || detail.children.length === 0) return undefined;
-    return detail.children.map((child) => ({
+    if (!graphDetail?.children || graphDetail.children.length === 0) return undefined;
+    return graphDetail.children.map((child) => ({
       session_id: child.id,
-      // Client-side path: child sessions don't carry graph_turns
-      // so recursive spindle rendering will skip children.
-      // Marker nodes + spawn links within the parent turn still work
-      // because subagent_session events carry child_session_id.
+      graph_turns: buildTurnsFromEvents(child.events),
     }));
-  }, [detail?.children]);
+  }, [graphDetail?.children]);
+
+  // selectedSessionId for session-based dimming: use the currently selected
+  // session's ID (even if it's a child), so dimming highlights the correct
+  // session in the merged graph.
+  const selectedSessionId = detail?.session.id;
 
   const handleNodeClick = useCallback(
-    (id: string) => {
+    (id: string | null) => {
       selectEvent(id);
     },
     [selectEvent],
@@ -257,9 +299,10 @@ function PanelViewContent({ view }: PanelViewContentProps) {
   if (view === "graph") {
     return (
       <GraphCanvas
-        events={sortedEvents}
+        events={graphEvents}
         childSessions={childSessions}
         selectedEventId={selectedEventId}
+        selectedSessionId={selectedSessionId}
         onNodeClick={handleNodeClick}
       />
     );

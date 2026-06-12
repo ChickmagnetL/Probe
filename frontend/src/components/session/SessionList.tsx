@@ -1,8 +1,15 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useSessionStore } from "../../stores/session";
 import { SessionCard } from "./SessionCard";
 import { EmptyState } from "../shared/EmptyState";
 import { SkeletonLines } from "../shared/SkeletonLines";
+import type { SessionRow } from "../../ipc/types";
+
+interface TreeItem {
+  session: SessionRow;
+  children: TreeItem[];
+  depth: number;
+}
 
 interface SessionListProps {
   onSessionSelect: (sessionId: string) => void;
@@ -12,8 +19,64 @@ interface SessionListProps {
 }
 
 export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) {
-  const { sessions, loading, selectedIds, toggleSelect, selectionMode } = useSessionStore();
+  const sessions = useSessionStore((s) => s.sessions);
+  const loading = useSessionStore((s) => s.loading);
+  const selectedIds = useSessionStore((s) => s.selectedIds);
+  const toggleSelect = useSessionStore((s) => s.toggleSelect);
+  const selectionMode = useSessionStore((s) => s.selectionMode);
   const activeId = useSessionStore((s) => s.activeSessionId);
+  const expandedSessions = useSessionStore((s) => s.expandedSessions);
+  const toggleExpand = useSessionStore((s) => s.toggleExpand);
+
+  // Build tree: root sessions (non-subagent) + group children by parent_session_id
+  const tree = useMemo((): TreeItem[] => {
+    const childrenByParent = new Map<string, SessionRow[]>();
+    const roots: SessionRow[] = [];
+
+    for (const s of sessions) {
+      if (s.parent_session_id) {
+        const list = childrenByParent.get(s.parent_session_id);
+        if (list) list.push(s);
+        else childrenByParent.set(s.parent_session_id, [s]);
+      } else {
+        roots.push(s);
+      }
+    }
+
+    function buildTree(parentSessions: SessionRow[], depth: number): TreeItem[] {
+      return parentSessions.map((session) => ({
+        session,
+        depth,
+        children: buildTree(childrenByParent.get(session.id) ?? [], depth + 1),
+      }));
+    }
+
+    // Sort children within each parent by start_time
+    for (const children of childrenByParent.values()) {
+      children.sort((a, b) => {
+        const at = a.start_time ?? "";
+        const bt = b.start_time ?? "";
+        return at.localeCompare(bt);
+      });
+    }
+
+    return buildTree(roots, 0);
+  }, [sessions]);
+
+  // Flatten tree into visible rows based on expanded state
+  const visibleItems = useMemo((): TreeItem[] => {
+    const result: TreeItem[] = [];
+    function collect(items: TreeItem[]) {
+      for (const item of items) {
+        result.push(item);
+        if (item.children.length > 0 && expandedSessions.has(item.session.id)) {
+          collect(item.children);
+        }
+      }
+    }
+    collect(tree);
+    return result;
+  }, [tree, expandedSessions]);
 
   // Sliding indicator state
   const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
@@ -32,7 +95,7 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
       if (el) setIndicator({ top: el.offsetTop, height: el.offsetHeight });
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, sessions]);
+  }, [activeId, visibleItems]);
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
@@ -50,23 +113,27 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
         )}
         {loading && sessions.length === 0 ? (
           <SkeletonLines count={3} />
-        ) : sessions.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <EmptyState
             title="No sessions"
             description="Import files to create sessions"
             action={emptyAction}
           />
         ) : (
-          sessions.map((s) => (
+          visibleItems.map((item) => (
             <SessionCard
-              key={s.id}
-              session={s}
-              isActive={s.id === activeId}
-              selected={selectedIds.has(s.id)}
+              key={item.session.id}
+              session={item.session}
+              isActive={item.session.id === activeId}
+              selected={selectedIds.has(item.session.id)}
               selectionMode={selectionMode}
-              onClick={() => onSessionSelect(s.id)}
-              onToggleSelect={() => toggleSelect(s.id)}
-              cardRef={(el) => setCardRef(s.id, el)}
+              onClick={() => onSessionSelect(item.session.id)}
+              onToggleSelect={() => toggleSelect(item.session.id)}
+              cardRef={(el) => setCardRef(item.session.id, el)}
+              depth={item.depth}
+              hasChildren={item.children.length > 0}
+              isExpanded={expandedSessions.has(item.session.id)}
+              onToggleExpand={() => toggleExpand(item.session.id)}
             />
           ))
         )}

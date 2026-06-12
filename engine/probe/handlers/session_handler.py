@@ -40,8 +40,12 @@ def handle_detail(params: dict[str, Any]) -> dict[str, Any]:
 
     events = event_dao.get_by_session_id(conn, session_id)
     children = session_dao.get_children(conn, session_id)
+    children_with_events = []
+    for child in children:
+        child_events = event_dao.get_by_session_id(conn, child["id"])
+        children_with_events.append({**child, "events": child_events})
 
-    return {"session": session, "events": events, "children": children}
+    return {"session": session, "events": events, "children": children_with_events}
 
 
 def handle_delete(params: dict[str, Any]) -> dict[str, Any]:

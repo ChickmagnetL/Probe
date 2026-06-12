@@ -97,7 +97,11 @@ export interface GraphTurn {
 export interface SessionDetail {
   session: SessionRow;
   events: EventRow[];
-  children: SessionRow[];
+  children: ChildSessionDetail[];
+}
+
+export interface ChildSessionDetail extends SessionRow {
+  events: EventRow[];
 }
 
 export interface SessionRow {
