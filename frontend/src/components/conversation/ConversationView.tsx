@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import type { EventRow } from "../../ipc/types";
 import { kindLabel } from "../graph/graph-labels";
+import { extractFields, type EventField } from "../../lib/event-fields";
 
 interface ConversationViewProps {
   events: EventRow[];
@@ -93,6 +94,35 @@ function buildTurns(events: EventRow[]): Turn[] {
   return turns;
 }
 
+function getEventFields(event: EventRow): EventField[] {
+  const meta: Record<string, unknown> = {
+    event_type: event.kind,
+    content: event.content,
+    title: undefined,
+    summary: undefined,
+  };
+  if (event.metadata) {
+    try {
+      const parsed = JSON.parse(event.metadata);
+      Object.assign(meta, parsed);
+    } catch { /* ignore */ }
+  }
+  return extractFields(meta, event.kind);
+}
+
+function StepFields({ fields }: { fields: EventField[] }) {
+  if (fields.length === 0) return null;
+  return (
+    <span className="text-[10px] text-muted-foreground/60 ml-1">
+      {fields
+        .slice(0, 3)
+        .map((f) => `${f.label}: ${f.value}`)
+        .join(" · ")}
+      {fields.length > 3 && ` · +${fields.length - 3}`}
+    </span>
+  );
+}
+
 function StepList({
   label,
   steps,
@@ -137,6 +167,7 @@ function StepList({
         <div className="mt-1 space-y-1 animate-fade-in">
           {steps.map((step) => {
             const isSelected = step.id === selectedEventId;
+            const fields = getEventFields(step);
             return (
               <div
                 key={step.id}
@@ -154,6 +185,8 @@ function StepList({
                 <span className="text-muted-foreground truncate">
                   {step.content?.slice(0, 120) || "(empty)"}
                 </span>
+                {/* R4: Field summary for each step */}
+                <StepFields fields={fields} />
               </div>
             );
           })}

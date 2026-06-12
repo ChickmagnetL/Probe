@@ -673,13 +673,40 @@ function toTurnEvent(ev: RawEvent): TurnEvent {
     }
   }
 
+  // R5: Extract child_session_id from metadata for subagent_session events
+  let childSessionId: string | undefined;
+  if (ev.kind === "subagent_session") {
+    childSessionId = _extractChildSessionId(ev.metadata);
+  }
+
   return {
     event_id: ev.id,
     kind: ev.kind,
     title,
     summary,
+    child_session_id: childSessionId,
     timestamp: ev.timestamp ?? undefined,
     source_line_no: ev.source_line_no ?? undefined,
     metadata: ev,
   };
+}
+
+/** R5: Extract child_session_id from metadata (JSON string or object). */
+function _extractChildSessionId(
+  metadata: string | Record<string, unknown> | null | undefined,
+): string | undefined {
+  if (!metadata) return undefined;
+  if (typeof metadata === "string") {
+    try {
+      const parsed = JSON.parse(metadata);
+      if (typeof parsed?.child_session_id === "string") {
+        return parsed.child_session_id;
+      }
+    } catch { /* ignore */ }
+    return undefined;
+  }
+  if (typeof metadata.child_session_id === "string") {
+    return metadata.child_session_id;
+  }
+  return undefined;
 }

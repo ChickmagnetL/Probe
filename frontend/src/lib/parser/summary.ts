@@ -118,6 +118,10 @@ function collectEvents(
   for (const row of buffers.lifecycle_events) {
     const session = sessionForRow(row, sessions);
     session.lifecycle.push({ ...row });
+    const eventType = stringOrNull(row.event_type);
+    if (eventType === "turn_aborted") {
+      session.events.push(buildTurnAbortedEvent(row, session.session_id));
+    }
   }
   for (const row of buffers.structured_tool_end_events) {
     const session = sessionForRow(row, sessions);
@@ -270,6 +274,39 @@ function buildToolOutputEvent(row: JSONDict, session_id: string): JSONDict {
     source_path: row.source_path,
     source_line_no: row.source_line_no,
     raw_text: row.raw_text,
+  };
+}
+
+function buildTurnAbortedEvent(row: JSONDict, session_id: string): JSONDict {
+  const reason = stringOrNull(row.reason) ?? "Unknown";
+  const reasonLabels: Record<string, string> = {
+    interrupted: "用户中断",
+    budgetlimited: "预算耗尽",
+    replaced: "被替换",
+    reviewended: "审查结束",
+  };
+  const reasonLabel = reasonLabels[reason.toLowerCase()] ?? reason;
+  const turnId = stringOrNull(row.turn_id);
+  const contentText = turnId
+    ? `回合 ${turnId} 因 ${reasonLabel} 中止`
+    : `回合因 ${reasonLabel} 中止`;
+  return {
+    event_id: row.event_id ?? row.raw_record_id,
+    session_id,
+    timestamp: row.timestamp,
+    kind: "turn_aborted",
+    role: null,
+    phase: null,
+    title: `回合中止 · ${reasonLabel}`,
+    summary: truncate(contentText, 120),
+    content: contentText,
+    content_label: "中止详情",
+    detail_note: reason,
+    raw_record_id: row.raw_record_id,
+    source_path: row.source_path,
+    source_line_no: row.source_line_no,
+    raw_text: row.raw_text,
+    event_type: "turn_aborted",
   };
 }
 

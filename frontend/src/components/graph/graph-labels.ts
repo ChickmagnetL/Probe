@@ -15,6 +15,7 @@ const KIND_LABELS: Record<string, string> = {
   compaction_event: "Compaction",
   instruction: "Instruction",
   subagent_session: "Sub-agent",
+  turn_aborted: "Turn Aborted",
   input_context: "Context",
   system_prompt: "System Prompt",
   input_hook: "Hook",

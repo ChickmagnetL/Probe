@@ -40,6 +40,10 @@ def _persist_import(summary: dict[str, Any], input_path: str) -> None:
             session_dao.upsert(conn, _to_session_row(s))
             events = s.get("events", [])
             if events:
+                # Delete existing events for this session before re-inserting
+                # to prevent duplicates when the same session is imported from
+                # multiple source paths (e.g. both samples/ and frontend/dist/).
+                event_dao.delete_by_session_id(conn, s["session_id"])
                 event_dao.insert_many(conn, _to_event_rows(events))
 
             # Persist synthetic preamble events (e.g. base_instructions) that

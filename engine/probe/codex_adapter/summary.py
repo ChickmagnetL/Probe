@@ -14,7 +14,9 @@ EVENT_ORDER = {
     "agents_md": 10,
     "user_input": 10,
     "instruction": 20,
+    "input_image": 42,
     "assistant_update": 40,
+    "turn_aborted": 45,
     "tool_call": 50,
     "tool_event": 55,
     "tool_output": 60,
@@ -37,6 +39,8 @@ ASSISTANT_SIDE_KINDS = {
     "system_event",
     "compaction_event",
     "subagent_session",
+    "turn_aborted",
+    "input_image",
 }
 INPUT_DETAIL_TITLE = {
     "input_prompt": "附加输入 · Prompt/指令",
@@ -107,7 +111,7 @@ def build_summary(buffers: ExtractionBuffers) -> dict[str, Any]:
     _ensure_synthetic_roots(sessions)
 
     flat_sessions = [
-        _serialize_imported_session(sessions[session_id])
+        _serialize_imported_session(sessions[session_id], sessions)
         for session_id in _sorted_imported_session_ids(sessions)
     ]
     root_sessions = [
@@ -317,6 +321,17 @@ def _collect_events(
     for row in buffers.lifecycle_events:
         session = _session_for_row(row, sessions, source_to_session_id)
         session.lifecycle.append(dict(row))
+        event_type = _string(row.get("event_type"))
+        if event_type == "turn_aborted":
+            # Dedup: same turn_id from different source paths should produce only one event
+            turn_id = _string(row.get("turn_id"))
+            if not any(
+                e.get("kind") == "turn_aborted" and e.get("turn_id") == turn_id
+                for e in session.events
+            ):
+                session.events.append(
+                    _build_turn_aborted_event(row, session.session_id)
+                )
 
     for row in buffers.structured_tool_end_events:
         session = _session_for_row(row, sessions, source_to_session_id)
@@ -388,9 +403,17 @@ def _extract_reviewed_session_id_from_events(events: list[dict[str, Any]]) -> st
     return None
 
 
-def _serialize_imported_session(session: SessionBuild) -> dict[str, Any]:
+def _serialize_imported_session(
+    session: SessionBuild,
+    sessions: dict[str, SessionBuild] | None = None,
+) -> dict[str, Any]:
     own_metrics = _calculate_own_metrics(session)
     own_events = _build_session_events(session, own_metrics)
+    # R1.3: Expand input_image content_parts from user_input into independent events
+    _expand_input_image_events(session.session_id, own_events)
+    # R1.2: Build subagent_session events from child session metadata
+    if sessions and session.child_ids:
+        _inject_subagent_events_flat(session, own_events, sessions)
     graph_turns = _build_graph_turns(own_events)
     _attach_session_input_preamble(session, graph_turns)
     return _session_payload(
@@ -422,6 +445,10 @@ def _serialize_tree(
     timeline = _build_timeline(session, own_events, child_sessions)
     graph_turns = _build_graph_turns(timeline)
     _attach_session_input_preamble(session, graph_turns)
+    # R1.2: Persist subagent_session entries into events (they live only in timeline)
+    _inject_subagent_sessions_into_events(own_events, timeline)
+    # R1.3: Expand input_image content_parts from user_input into independent events
+    _expand_input_image_events(session.session_id, own_events)
     return _session_payload(
         session=session,
         own_events=own_events,
@@ -1164,6 +1191,40 @@ def _build_tool_output_event(row: dict[str, Any], session_id: str) -> dict[str, 
     }
 
 
+def _build_turn_aborted_event(
+    row: dict[str, Any],
+    session_id: str,
+) -> dict[str, Any]:
+    reason = _string(row.get("reason")) or "Unknown"
+    reason_labels = {
+        "interrupted": "用户中断",
+        "budgetlimited": "预算耗尽",
+        "replaced": "被替换",
+        "reviewended": "审查结束",
+    }
+    reason_label = reason_labels.get(reason.lower(), reason)
+    turn_id = _string(row.get("turn_id"))
+    return {
+        "event_id": row.get("event_id") or row.get("raw_record_id"),
+        "session_id": session_id,
+        "timestamp": row.get("timestamp"),
+        "kind": "turn_aborted",
+        "role": None,
+        "phase": None,
+        "title": f"回合中止 · {reason_label}",
+        "summary": _truncate(f"回合 {turn_id} 因 {reason_label} 中止", 120),
+        "content": f"回合 {turn_id} 因 {reason_label} 中止" if turn_id else f"回合因 {reason_label} 中止",
+        "content_label": "中止详情",
+        "detail_note": reason,
+        "turn_id": turn_id,
+        "raw_record_id": row.get("raw_record_id"),
+        "source_path": row.get("source_path"),
+        "source_line_no": row.get("source_line_no"),
+        "raw_text": row.get("raw_text"),
+        "event_type": "turn_aborted",
+    }
+
+
 def _build_parser_event(
     row: dict[str, Any],
     session_id: str,
@@ -1514,6 +1575,117 @@ def _event_sort_key(event: dict[str, Any]) -> tuple[datetime, int, int, str]:
         EVENT_ORDER.get(_string(event.get("kind")) or "", 999),
         event_id,
     )
+
+
+def _inject_subagent_sessions_into_events(
+    own_events: list[dict[str, Any]],
+    timeline: list[dict[str, Any]],
+) -> None:
+    """R1.2: Persist subagent_session entries from timeline into own_events
+    so they appear in the events table and are visible in all three views."""
+    existing_ids = {e.get("event_id") for e in own_events}
+    for item in timeline:
+        if item.get("kind") == "subagent_session":
+            eid = item.get("event_id")
+            if eid not in existing_ids:
+                own_events.append(item)
+    own_events.sort(key=_event_sort_key)
+
+
+def _expand_input_image_events(
+    session_id: str,
+    own_events: list[dict[str, Any]],
+) -> None:
+    """R1.3: Expand input_image content_parts from user_input events into
+    independent events so they are visible in all three views."""
+    new_events: list[dict[str, Any]] = []
+    for event in own_events:
+        if event.get("kind") != "user_input":
+            continue
+        parts = event.get("content_parts")
+        if not isinstance(parts, list) or not parts:
+            continue
+        for index, part in enumerate(parts):
+            if not isinstance(part, dict):
+                continue
+            part_type = (_string(part.get("type")) or "").lower()
+            content = _extract_input_part_content(part)
+            if not content:
+                continue
+            # Check if this is an image part
+            is_image = "image" in part_type or content.lower().endswith(
+                IMAGE_PATH_SUFFIXES
+            )
+            if not is_image:
+                continue
+            new_events.append(
+                {
+                    "event_id": f"{event.get('event_id')}:input_image:{index}",
+                    "session_id": session_id,
+                    "timestamp": event.get("timestamp"),
+                    "kind": "input_image",
+                    "role": None,
+                    "phase": None,
+                    "title": INPUT_DETAIL_TITLE.get("input_image", "附加输入 · 图片"),
+                    "summary": _truncate(content, 120),
+                    "content": content,
+                    "content_label": INPUT_DETAIL_CONTENT_LABEL.get(
+                        "input_image", "图片内容"
+                    ),
+                    "detail_note": _string(part.get("type")),
+                    "raw_record_id": event.get("raw_record_id"),
+                    "source_path": event.get("source_path"),
+                    "source_line_no": event.get("source_line_no"),
+                    "raw_text": event.get("raw_text"),
+                    "event_type": "input_image",
+                }
+            )
+    own_events.extend(new_events)
+    own_events.sort(key=_event_sort_key)
+
+
+def _inject_subagent_events_flat(
+    parent_session: SessionBuild,
+    own_events: list[dict[str, Any]],
+    sessions: dict[str, SessionBuild],
+) -> None:
+    """R1.2 flat-path: Build subagent_session events from SessionBuild child_ids
+    so they are persisted to the SQLite events table and visible in all views."""
+    for child_id in parent_session.child_ids:
+        child = sessions.get(child_id)
+        if child is None:
+            continue
+        branch_meta = parent_session.branch_meta.get(child_id, {})
+        display_name = child.agent_nickname or child_id[:8]
+        child_metrics = _calculate_own_metrics(child)
+        bits = [
+            child.agent_role or "子代理",
+        ]
+        if child_metrics.get("display_node_count"):
+            bits.append(f"{child_metrics['display_node_count']} 个节点")
+        if child_metrics.get("total_tokens"):
+            bits.append(f"{child_metrics['total_tokens']} tokens")
+        status_preview = _string(branch_meta.get("status_preview"))
+        if status_preview:
+            bits.append(status_preview)
+        summary = " · ".join(bit for bit in bits if bit)
+        title = f"子代理分支 · {display_name}"
+        prompt_preview = _string(branch_meta.get("prompt_preview"))
+        own_events.append(
+            {
+                "event_id": f"subagent:{child_id}",
+                "kind": "subagent_session",
+                "session_id": parent_session.session_id,
+                "timestamp": branch_meta.get("timestamp")
+                or child_metrics.get("start_time"),
+                "title": title,
+                "summary": summary,
+                "detail_note": "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",
+                "prompt_preview": prompt_preview,
+                "child_session_id": child_id,
+            }
+        )
+    own_events.sort(key=_event_sort_key)
 
 
 def _detail_sort_key(event: dict[str, Any]) -> tuple[int, datetime, str]:

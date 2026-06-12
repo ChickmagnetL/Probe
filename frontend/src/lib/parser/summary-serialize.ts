@@ -1,5 +1,5 @@
 import type { JSONDict } from "./models";
-import { stringOrNull, asInt, shortId, parseTimestamp, sortKeyFromTimestamp } from "./summary-helpers";
+import { stringOrNull, asInt, shortId, parseTimestamp, sortKeyFromTimestamp, eventSortKey } from "./summary-helpers";
 import { buildSessionEvents, buildGraphTurns, buildTimeline, buildSessionPreambleDetails } from "./summary-events";
 
 /** Minimal session shape needed for serialization. */
@@ -166,6 +166,8 @@ export function sessionPayload(
 export function serializeImportedSession(session: SessionBuild): JSONDict {
   const ownMetrics = calculateOwnMetrics(session);
   const ownEvents = buildSessionEvents(session, ownMetrics);
+  // R1.3: Expand input_image content_parts from user_input into independent events
+  expandInputImageEvents(session.session_id, ownEvents);
   const gTurns = buildGraphTurns(ownEvents);
   attachSessionInputPreamble(session, gTurns);
   return sessionPayload(session, ownEvents, ownEvents, gTurns, ownMetrics, ownMetrics, []);
@@ -182,6 +184,10 @@ export function serializeTree(
   const childMetricsList = childSessions.map((cs) => cs.metrics as JSONDict);
   const aggregateMetrics = combineMetrics(ownMetrics, childMetricsList);
   const timeline = buildTimeline(session, ownEvents, childSessions);
+  // R1.2: Persist subagent_session entries from timeline into events
+  injectSubagentSessionsIntoEvents(ownEvents, timeline);
+  // R1.3: Expand input_image content_parts from user_input into independent events
+  expandInputImageEvents(session.session_id, ownEvents);
   const gTurns = buildGraphTurns(timeline);
   attachSessionInputPreamble(session, gTurns);
   return sessionPayload(session, ownEvents, timeline, gTurns, ownMetrics, aggregateMetrics, childSessions);
@@ -274,4 +280,93 @@ function elapsedSeconds(start: string | null, end: string | null): number {
   const e = parseTimestamp(end);
   if (s === 0 || e === 0) return 0;
   return Math.round(Math.max((e - s) / 1000, 0) * 10) / 10;
+}
+
+// ── R1.2: Inject subagent_session entries from timeline into events ──
+
+const IMAGE_PATH_SUFFIXES = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"];
+
+function injectSubagentSessionsIntoEvents(
+  ownEvents: JSONDict[],
+  timeline: JSONDict[],
+): void {
+  const existingIds = new Set(ownEvents.map((e) => stringOrNull(e.event_id)));
+  for (const item of timeline) {
+    if (item.kind === "subagent_session") {
+      const eid = stringOrNull(item.event_id);
+      if (eid && !existingIds.has(eid)) {
+        ownEvents.push({ ...item });
+      }
+    }
+  }
+  ownEvents.sort((a, b) => {
+    const ka = eventSortKey(a as unknown as Record<string, unknown>);
+    const kb = eventSortKey(b as unknown as Record<string, unknown>);
+    return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2] || ka[3].localeCompare(kb[3]);
+  });
+}
+
+// ── R1.3: Expand input_image content_parts from user_input into events ──
+
+function expandInputImageEvents(
+  sessionId: string,
+  ownEvents: JSONDict[],
+): void {
+  const newEvents: JSONDict[] = [];
+  for (const event of ownEvents) {
+    if (event.kind !== "user_input") continue;
+    const parts = event.content_parts;
+    if (!Array.isArray(parts) || parts.length === 0) continue;
+    for (let index = 0; index < parts.length; index++) {
+      const part = parts[index];
+      if (typeof part !== "object" || part === null) continue;
+      const partType = (stringOrNull(part.type) ?? "").toLowerCase();
+      // Use same content extraction as Python's _extract_input_part_content
+      const content =
+        typeof part.text === "string" ? part.text
+        : typeof part.content === "string" ? part.content
+        : typeof part.image_url === "string" ? part.image_url
+        : typeof part.path === "string" ? part.path
+        : typeof part.file_path === "string" ? part.file_path
+        : typeof part.local_path === "string" ? part.local_path
+        : typeof part.url === "string" ? part.url
+        : typeof part.uri === "string" ? part.uri
+        : typeof part.value === "string" ? part.value
+        : null;
+      if (!content) continue;
+      const isImage = partType.includes("image")
+        || IMAGE_PATH_SUFFIXES.some((s) => content.toLowerCase().endsWith(s));
+      if (!isImage) continue;
+      newEvents.push({
+        event_id: `${stringOrNull(event.event_id) ?? "unknown"}:input_image:${index}`,
+        session_id: sessionId,
+        timestamp: event.timestamp,
+        kind: "input_image",
+        role: null,
+        phase: null,
+        title: "附加输入 · 图片",
+        summary: truncate(content, 120),
+        content,
+        content_label: "图片路径",
+        detail_note: partType || "image",
+        raw_record_id: event.raw_record_id,
+        source_path: event.source_path,
+        source_line_no: event.source_line_no,
+        raw_text: event.raw_text,
+        event_type: "input_image",
+      });
+    }
+  }
+  ownEvents.push(...newEvents);
+  ownEvents.sort((a, b) => {
+    const ka = eventSortKey(a as unknown as Record<string, unknown>);
+    const kb = eventSortKey(b as unknown as Record<string, unknown>);
+    return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2] || ka[3].localeCompare(kb[3]);
+  });
+}
+
+function truncate(text: string, limit: number): string {
+  const normalized = text.split(/\s+/).join(" ");
+  if (normalized.length <= limit) return normalized;
+  return normalized.slice(0, limit - 1) + "…";
 }

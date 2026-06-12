@@ -2,6 +2,7 @@ import type { EventRow } from "../../ipc/types";
 import { roleColor } from "../../lib/color";
 import { formatTime } from "../../lib/format";
 import { kindLabel } from "../graph/graph-labels";
+import { extractFields, type EventField } from "../../lib/event-fields";
 
 interface EventNodeProps {
   event: EventRow;
@@ -10,9 +11,29 @@ interface EventNodeProps {
   onClick: () => void;
 }
 
+function getEventFields(event: EventRow): EventField[] {
+  // Build metadata object from event row and parsed metadata JSON
+  const meta: Record<string, unknown> = {
+    event_type: event.kind,
+    content: event.content,
+    title: undefined,
+    summary: undefined,
+  };
+
+  if (event.metadata) {
+    try {
+      const parsed = JSON.parse(event.metadata);
+      Object.assign(meta, parsed);
+    } catch { /* ignore parse errors */ }
+  }
+
+  return extractFields(meta, event.kind);
+}
+
 export function EventNode({ event, index, isSelected, onClick }: EventNodeProps) {
   const color = roleColor(event.role ?? "");
   const label = kindLabel(event.kind);
+  const fields = getEventFields(event);
 
   return (
     <div className="relative flex gap-3">
@@ -55,6 +76,18 @@ export function EventNode({ event, index, isSelected, onClick }: EventNodeProps)
           <p className={`mt-2 text-xs leading-relaxed line-clamp-2 ${isSelected ? "text-foreground/80" : "text-muted-foreground"}`}>
             {event.content.slice(0, 160)}
           </p>
+        )}
+
+        {/* Field summary row (R3) */}
+        {fields.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5">
+            {fields.map((f) => (
+              <span key={f.key} className={`text-[11px] inline-flex gap-1 ${isSelected ? "text-foreground/60" : "text-muted-foreground/50"}`}>
+                <span className="font-medium">{f.label}:</span>
+                <span className="truncate max-w-[180px]">{f.value}</span>
+              </span>
+            ))}
+          </div>
         )}
 
         {/* Timestamp */}

@@ -6,6 +6,7 @@ import { SplitMenu } from "./SplitMenu";
 import type { LayoutNode, ViewKind } from "../../stores/panel";
 import type { EventRow } from "../../ipc/types"; // used in sortedEvents selector
 import { GraphCanvas } from "../graph/GraphCanvas";
+import type { ChildSession } from "../graph/graph-layout";
 import { TimelineView } from "../timeline/TimelineView";
 import { ConversationView } from "../conversation/ConversationView";
 import { RawView } from "../raw/RawView";
@@ -227,6 +228,18 @@ function PanelViewContent({ view }: PanelViewContentProps) {
     });
   }, [detail?.events]);
 
+  // R5: Convert detail.children (SessionRow[]) to ChildSession[] for GraphCanvas
+  const childSessions = useMemo((): ChildSession[] | undefined => {
+    if (!detail?.children || detail.children.length === 0) return undefined;
+    return detail.children.map((child) => ({
+      session_id: child.id,
+      // Client-side path: child sessions don't carry graph_turns
+      // so recursive spindle rendering will skip children.
+      // Marker nodes + spawn links within the parent turn still work
+      // because subagent_session events carry child_session_id.
+    }));
+  }, [detail?.children]);
+
   const handleNodeClick = useCallback(
     (id: string) => {
       selectEvent(id);
@@ -245,6 +258,7 @@ function PanelViewContent({ view }: PanelViewContentProps) {
     return (
       <GraphCanvas
         events={sortedEvents}
+        childSessions={childSessions}
         selectedEventId={selectedEventId}
         onNodeClick={handleNodeClick}
       />
