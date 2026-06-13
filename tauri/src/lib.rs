@@ -2,6 +2,7 @@ mod commands;
 mod sidecar;
 
 use sidecar::SidecarManager;
+use tauri::Manager;
 
 pub fn run() {
     tauri::Builder::default()
@@ -14,6 +15,12 @@ pub fn run() {
             commands::app_state::app_info,
             commands::read_raw_file::read_raw_file,
         ])
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("failed to run application");
 }
