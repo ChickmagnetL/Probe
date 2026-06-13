@@ -84,6 +84,30 @@ export function GraphCanvas({
   labelsVisibleRef.current = labelsVisible;
   selectedSessionIdRef.current = selectedSessionId;
 
+  // Center the view to fit graph bounds within the canvas
+  const fitToScreen = useCallback((data?: GraphData) => {
+    const d = data ?? dataRef.current;
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container || !d) {
+      transformRef.current = { x: 0, y: 0, k: 1 };
+      return;
+    }
+    sizeCanvasToContainer(canvas, container);
+    const bounds = graphBounds(d);
+    const canvasRect = canvas.getBoundingClientRect();
+    const scaleX = canvasRect.width / (bounds.w + 120);
+    const scaleY = canvasRect.height / (bounds.h + 120);
+    const k = Math.min(scaleX, scaleY, 1);
+    const cx = bounds.minX + bounds.w / 2;
+    const cy = bounds.minY + bounds.h / 2;
+    transformRef.current = {
+      x: canvasRect.width / 2 - cx * k,
+      y: canvasRect.height / 2 - cy * k,
+      k,
+    };
+  }, []);
+
   // Build graph data
   useEffect(() => {
     const turns = graphTurns ?? (events ? buildTurnsFromEvents(events) : []);
@@ -103,31 +127,13 @@ export function GraphCanvas({
       spindles: result.spindles,
     };
 
-    const canvas = canvasRef.current;
-    const container = containerRef.current;
-    if (canvas && container) {
-      sizeCanvasToContainer(canvas, container);
-      // 自动居中
-      const bounds = graphBounds(newData);
-      const canvasRect = canvas.getBoundingClientRect();
-      const scaleX = canvasRect.width / (bounds.w + 120);
-      const scaleY = canvasRect.height / (bounds.h + 120);
-      const k = Math.min(scaleX, scaleY, 1);
-      const cx = bounds.minX + bounds.w / 2;
-      const cy = bounds.minY + bounds.h / 2;
-      transformRef.current = {
-        x: canvasRect.width / 2 - cx * k,
-        y: canvasRect.height / 2 - cy * k,
-        k,
-      };
-    } else {
-      transformRef.current = { x: 0, y: 0, k: 1 };
-    }
+    fitToScreen(newData);
+
     // 同时更新数据和标记脏，避免中间状态
     dataRef.current = newData;
     dirtyRef.current = true;
     cacheDirtyRef.current = true;
-  }, [graphTurns, events, childSessions]);
+  }, [graphTurns, events, childSessions, fitToScreen]);
 
   // Invalidate cache on selection change & animate to selected node
   useEffect(() => {
@@ -378,8 +384,9 @@ export function GraphCanvas({
         hoveredNodeIdRef.current = null;
         dirtyRef.current = true;
       },
+      fitToScreen,
     );
-  }, [onNodeClick]);
+  }, [onNodeClick, fitToScreen]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -394,10 +401,10 @@ export function GraphCanvas({
     return () => obs.disconnect();
   }, []);
 
-  const resetView = () => {
-    transformRef.current = { x: 0, y: 0, k: 1 };
+  const resetView = useCallback(() => {
+    fitToScreen();
     dirtyRef.current = true;
-  };
+  }, [fitToScreen]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden">

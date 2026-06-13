@@ -77,7 +77,6 @@ def _to_session_row(s: dict[str, Any]) -> dict[str, Any]:
         "agent_role": s.get("agent_role"),
         "start_time": s.get("start_time"),
         "end_time": s.get("end_time"),
-        "debug_basket": s.get("debug_basket"),
     }
 
 

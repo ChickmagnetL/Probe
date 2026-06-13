@@ -11,6 +11,7 @@ export function createInteractionHandlers(
   onHover: (x: number, y: number) => void,
   onClick: (x: number, y: number) => void,
   onMouseLeave?: () => void,
+  onResetView?: () => void,
 ) {
   let isPanning = false;
   let startX = 0;
@@ -75,8 +76,7 @@ export function createInteractionHandlers(
   }
 
   function onDblClick() {
-    // Reset view
-    setTransform({ x: 0, y: 0, k: 1 });
+    onResetView?.();
   }
 
   function handleMouseLeave() {

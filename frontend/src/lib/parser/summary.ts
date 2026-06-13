@@ -440,75 +440,6 @@ function objectKeyCount(value: unknown): number {
     : 0;
 }
 
-function buildDebugBasket(buffers: ExtractionBuffers): JSONDict {
-  const extracted = new Map<string, { table_name: string; count: number; keys: Set<string> }>();
-  const residual = new Map<string, { table_name: string; count: number; keys: Set<string> }>();
-  const tables = [
-    "conversation_meta_raw", "turn_manifest", "message_items_raw",
-    "reasoning_items_raw", "tool_calls_raw", "tool_call_outputs_raw",
-    "telemetry_events", "lifecycle_events", "structured_tool_end_events",
-    "collaboration_events", "search_events", "system_events", "compaction_events",
-  ] as const;
-
-  for (const table of tables) {
-    for (const row of buffers[table]) {
-      const route = stringOrNull(row.route_key) ?? table;
-      const extractedFields = Array.isArray(row.extracted_fields) ? row.extracted_fields : [];
-      const extra = typeof row.extra_fields === "object" && row.extra_fields !== null && !Array.isArray(row.extra_fields)
-        ? row.extra_fields as JSONDict
-        : {};
-      if (extractedFields.length > 0) {
-        const entry = extracted.get(route) ?? { table_name: table, count: 0, keys: new Set<string>() };
-        entry.count += 1;
-        for (const key of extractedFields) {
-          if (typeof key === "string") entry.keys.add(key);
-        }
-        extracted.set(route, entry);
-      }
-      const extraKeys = Object.keys(extra);
-      if (extraKeys.length > 0) {
-        const entry = residual.get(route) ?? { table_name: table, count: 0, keys: new Set<string>() };
-        entry.count += 1;
-        for (const key of extraKeys) entry.keys.add(key);
-        residual.set(route, entry);
-      }
-    }
-  }
-
-  const unknown_routes = Object.entries(buffers.unknown_route_counts)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([route_key, count]) => ({
-      route_key,
-      count,
-      sources: buffers.raw_records
-        .filter((row) => row.route_key === route_key && row.route_table === null)
-        .slice(0, 8)
-        .map((row) => `${String(row.source_path ?? "")}:${String(row.source_line_no ?? "")}`),
-    }));
-
-  const residualGroups = mapDebugGroups(residual);
-  return {
-    extracted_fields: mapDebugGroups(extracted),
-    residual_fields: residualGroups,
-    unknown_routes,
-    residual_field_count: residualGroups.reduce((acc, item) => acc + (item.keys as string[]).length, 0),
-    unknown_record_count: unknown_routes.reduce((acc, item) => acc + Number(item.count ?? 0), 0),
-  };
-}
-
-function mapDebugGroups(
-  map: Map<string, { table_name: string; count: number; keys: Set<string> }>,
-): JSONDict[] {
-  return [...map.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([route_key, entry]) => ({
-      route_key,
-      table_name: entry.table_name,
-      count: entry.count,
-      keys: [...entry.keys].sort(),
-    }));
-}
-
 // ── Public API ──────────────────────────────────────────
 
 export function buildSummary(buffers: ExtractionBuffers): JSONDict {
@@ -533,15 +464,18 @@ export function buildSummary(buffers: ExtractionBuffers): JSONDict {
     const arr = buffers[key];
     tableCounts[key] = Array.isArray(arr) ? arr.length : 0;
   }
-  const debugBasket = buildDebugBasket(buffers);
-  attachDebugBasket(flatSessions, debugBasket);
-  attachDebugBasket(rootSessions, debugBasket);
+
+  // Compute unknown_record_count directly from buffers
+  let unknownRecordCount = 0;
+  for (const count of Object.values(buffers.unknown_route_counts)) {
+    unknownRecordCount += Number(count ?? 0);
+  }
 
   return {
     total_files: buffers.file_manifest.length,
     parsed_records: buffers.raw_records.length,
     parse_errors: buffers.parse_errors.length,
-    unknown_record_count: debugBasket.unknown_record_count,
+    unknown_record_count: unknownRecordCount,
     unknown_route_keys: Object.keys(buffers.unknown_route_counts).sort(),
     imported_session_count: flatSessions.length,
     root_session_count: rootSessions.length,
@@ -552,16 +486,5 @@ export function buildSummary(buffers: ExtractionBuffers): JSONDict {
     payload_type_counts: buffers.payload_type_counts,
     reserved_route_counts: buffers.reserved_route_counts,
     unknown_route_counts: buffers.unknown_route_counts,
-    debug_basket: debugBasket,
   };
-}
-
-function attachDebugBasket(sessions: JSONDict[], debugBasket: JSONDict): void {
-  for (const session of sessions) {
-    session.debug_basket = debugBasket;
-    const childSessions = Array.isArray(session.child_sessions)
-      ? session.child_sessions as JSONDict[]
-      : [];
-    attachDebugBasket(childSessions, debugBasket);
-  }
 }

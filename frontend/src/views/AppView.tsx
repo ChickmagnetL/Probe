@@ -5,7 +5,13 @@ import { usePanelStore } from "../stores/panel";
 import { SessionList } from "../components/session/SessionList";
 import { PanelContainer } from "../components/panel/PanelContainer";
 import { EmptyState } from "../components/shared/EmptyState";
-import { EventDetailOverlay } from "../components/shared/EventDetailOverlay";
+import {
+  MetaCardsGrid,
+  ContentRenderer,
+  MetadataSection,
+  MergedToolCallContent,
+} from "../components/shared/EventDetailContent";
+import { kindLabel } from "../components/graph/graph-labels";
 import { SkeletonLines } from "../components/shared/SkeletonLines";
 import { ErrorBoundary } from "../components/shared/ErrorBoundary";
 import { TitleDragRegion } from "../components/shared/TitleBar";
@@ -131,6 +137,16 @@ export function AppView() {
     selectEvent(null);
   };
 
+  // ESC key to close event detail
+  useEffect(() => {
+    if (!selectedEvent) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") selectEvent(null);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [selectedEvent, selectEvent]);
+
   const handleSessionSelect = useCallback(
     (sessionId: string) => {
       fetchDetail(sessionId);
@@ -163,7 +179,7 @@ export function AppView() {
       {/* Left: Main panel area */}
       <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-background">
         {/* Drag region for left side - transparent, above content */}
-        <TitleDragRegion className="fixed top-0 left-0 h-5 z-40 select-none" style={{ right: '280px' }} />
+        <TitleDragRegion className="fixed top-0 left-0 h-5 z-40 select-none" style={{ right: '400px' }} />
         {detailLoading && !detail ? (
           <SkeletonLines count={3} />
         ) : detail ? (
@@ -201,7 +217,7 @@ export function AppView() {
       </main>
 
       {/* Right: Function panel */}
-      <aside className="w-[280px] shrink-0 flex flex-col bg-card border-l border-border">
+      <aside className="w-[400px] shrink-0 flex flex-col bg-card border-l border-border">
         {/* Header with branding + actions - starts from top for seamless title bar */}
         <div className="px-4 pt-[10px] pb-3 border-b border-border flex items-center gap-3">
           <TitleDragRegion className="flex-1 min-w-0 self-stretch flex items-center select-none">
@@ -280,13 +296,43 @@ export function AppView() {
         </div>
       </aside>
 
-      {/* Event detail overlay - outside flex row to prevent layout shift */}
+      {/* Event detail overlay - covers full height from top */}
       {selectedEvent && (
-        <EventDetailOverlay
-          event={selectedEvent}
-          pairedEvent={pairedEvent}
-          onClose={handleOverlayClose}
-        />
+        <div className="absolute top-0 right-0 h-full w-[400px] z-30 flex flex-col bg-card border-l border-border shadow-lg">
+          <div className="flex items-center gap-2 px-4 pt-[10px] pb-2 border-b border-border">
+            <button
+              onClick={handleOverlayClose}
+              className="flex items-center px-3 py-1.5 -ml-3 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Back to sessions"
+              type="button"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+              </svg>
+            </button>
+            <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              {kindLabel(selectedEvent.kind)}
+            </span>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+            {(selectedEvent.kind === "tool_call" || selectedEvent.kind === "tool_output") && pairedEvent ? (
+              <MergedToolCallContent
+                callEvent={selectedEvent.kind === "tool_call" ? selectedEvent : pairedEvent}
+                outputEvent={selectedEvent.kind === "tool_call" ? pairedEvent : selectedEvent}
+              />
+            ) : (
+              <>
+                <MetaCardsGrid event={selectedEvent} />
+                <ContentRenderer event={selectedEvent} />
+                <MetadataSection
+                  metadata={selectedEvent.metadata}
+                  sourceLineNo={selectedEvent.source_line_no}
+                />
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Delete confirmation dialog */}

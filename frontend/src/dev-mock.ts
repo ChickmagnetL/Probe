@@ -42,7 +42,6 @@ function sessionSummaryToRow(s: JSONDict): SessionRow {
     start_time: (s.start_time as string) ?? null,
     end_time: (s.end_time as string) ?? null,
     imported_at: new Date().toISOString(),
-    debug_basket: s.debug_basket as SessionRow["debug_basket"],
   };
 }
 
@@ -100,7 +99,6 @@ function buildImportResult(summary: JSONDict): ImportResult {
     payload_type_counts: (summary.payload_type_counts as Record<string, number>) ?? {},
     reserved_route_counts: (summary.reserved_route_counts as Record<string, number>) ?? {},
     unknown_route_counts: (summary.unknown_route_counts as Record<string, number>) ?? {},
-    debug_basket: summary.debug_basket as ImportResult["debug_basket"],
   };
 }
 
@@ -126,7 +124,6 @@ function toSessionSummary(s: JSONDict): SessionSummary {
     timeline: (s.timeline as SessionEvent[]) ?? [],
     graph_turns: (s.graph_turns as GraphTurn[]) ?? [],
     child_sessions: (s.child_sessions as SessionSummary[]) ?? [],
-    debug_basket: s.debug_basket as SessionSummary["debug_basket"],
   };
 }
 

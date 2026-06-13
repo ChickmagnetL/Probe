@@ -15,7 +15,6 @@ _TABLES_SQL = [
         agent_role TEXT,
         start_time TEXT,
         end_time TEXT,
-        debug_basket TEXT,
         imported_at TEXT DEFAULT CURRENT_TIMESTAMP
     )""",
     """CREATE TABLE IF NOT EXISTS events (
@@ -63,21 +62,6 @@ _INDEXES_SQL = [
 def initialize_schema(conn: sqlite3.Connection) -> None:
     for sql in _TABLES_SQL:
         conn.execute(sql)
-    _ensure_column(conn, "sessions", "debug_basket", "debug_basket TEXT")
     for sql in _INDEXES_SQL:
         conn.execute(sql)
     conn.commit()
-
-
-def _ensure_column(
-    conn: sqlite3.Connection,
-    table_name: str,
-    column_name: str,
-    column_definition: str,
-) -> None:
-    columns = {
-        row[1]
-        for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-    }
-    if column_name not in columns:
-        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_definition}")

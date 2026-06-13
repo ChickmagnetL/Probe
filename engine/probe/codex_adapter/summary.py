@@ -118,15 +118,12 @@ def build_summary(buffers: ExtractionBuffers) -> dict[str, Any]:
         _serialize_tree(session_id, sessions)
         for session_id in _sorted_root_session_ids(sessions)
     ]
-    debug_basket = _build_debug_basket(buffers)
-    _attach_debug_basket(flat_sessions, debug_basket)
-    _attach_debug_basket(root_sessions, debug_basket)
 
     return {
         "total_files": len(buffers.file_manifest),
         "parsed_records": len(buffers.raw_records),
         "parse_errors": len(buffers.parse_errors),
-        "unknown_record_count": debug_basket["unknown_record_count"],
+        "unknown_record_count": sum(buffers.unknown_route_counts.values()),
         "unknown_route_keys": sorted(buffers.unknown_route_counts.keys()),
         "imported_session_count": len(flat_sessions),
         "root_session_count": len(root_sessions),
@@ -140,7 +137,6 @@ def build_summary(buffers: ExtractionBuffers) -> dict[str, Any]:
         "payload_type_counts": dict(sorted(buffers.payload_type_counts.items())),
         "reserved_route_counts": dict(sorted(buffers.reserved_route_counts.items())),
         "unknown_route_counts": dict(sorted(buffers.unknown_route_counts.items())),
-        "debug_basket": debug_basket,
     }
 
 
@@ -1343,97 +1339,6 @@ def _first_unified_diff(value: Any) -> str | None:
         if diff:
             return diff
     return None
-
-
-def _build_debug_basket(buffers: ExtractionBuffers) -> dict[str, Any]:
-    extracted: dict[str, dict[str, Any]] = {}
-    residual: dict[str, dict[str, Any]] = {}
-    table_names = (
-        "conversation_meta_raw",
-        "turn_manifest",
-        "message_items_raw",
-        "reasoning_items_raw",
-        "tool_calls_raw",
-        "tool_call_outputs_raw",
-        "telemetry_events",
-        "lifecycle_events",
-        "structured_tool_end_events",
-        "collaboration_events",
-        "search_events",
-        "system_events",
-        "compaction_events",
-    )
-
-    for table_name in table_names:
-        for row in getattr(buffers, table_name):
-            route_key = _string(row.get("route_key")) or table_name
-            extracted_fields = row.get("extracted_fields")
-            if isinstance(extracted_fields, list) and extracted_fields:
-                entry = extracted.setdefault(
-                    route_key,
-                    {"table_name": table_name, "count": 0, "keys": set()},
-                )
-                entry["count"] += 1
-                for key in extracted_fields:
-                    if isinstance(key, str):
-                        entry["keys"].add(key)
-
-            extra_fields = row.get("extra_fields")
-            if isinstance(extra_fields, dict) and extra_fields:
-                entry = residual.setdefault(
-                    route_key,
-                    {"table_name": table_name, "count": 0, "keys": set()},
-                )
-                entry["count"] += 1
-                for key in extra_fields:
-                    entry["keys"].add(key)
-
-    unknown_routes = [
-        {
-            "route_key": route_key,
-            "count": count,
-            "sources": [
-                f"{row.get('source_path')}:{row.get('source_line_no')}"
-                for row in buffers.raw_records
-                if row.get("route_key") == route_key and row.get("route_table") is None
-            ][:8],
-        }
-        for route_key, count in sorted(buffers.unknown_route_counts.items())
-    ]
-    residual_groups = _debug_groups(residual)
-    return {
-        "extracted_fields": _debug_groups(extracted),
-        "residual_fields": residual_groups,
-        "unknown_routes": unknown_routes,
-        "residual_field_count": sum(len(row["keys"]) for row in residual_groups),
-        "unknown_record_count": sum(int(row["count"]) for row in unknown_routes),
-    }
-
-
-def _debug_groups(groups: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    rows = []
-    for route_key, entry in sorted(groups.items()):
-        rows.append(
-            {
-                "route_key": route_key,
-                "table_name": entry["table_name"],
-                "count": entry["count"],
-                "keys": sorted(entry["keys"]),
-            }
-        )
-    return rows
-
-
-def _attach_debug_basket(
-    sessions: list[dict[str, Any]],
-    debug_basket: dict[str, Any],
-) -> None:
-    for session in sessions:
-        session["debug_basket"] = debug_basket
-        child_sessions = session.get("child_sessions")
-        if isinstance(child_sessions, list):
-            _attach_debug_basket(child_sessions, debug_basket)
-
 
 def _build_telemetry_snapshot(row: dict[str, Any]) -> dict[str, Any]:
     return {
