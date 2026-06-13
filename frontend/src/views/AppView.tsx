@@ -65,6 +65,11 @@ export function AppView() {
   const root = usePanelStore((s) => s.root);
   const resetLayout = usePanelStore((s) => s.resetLayout);
 
+  // Sidebar width state: null = CSS clamp default, number = user-dragged px value
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
   // FilterBar state
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState(SORT_OPTIONS[0].value);
@@ -73,6 +78,42 @@ export function AppView() {
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteFiles, setDeleteFiles] = useState(false);
+
+  // Resize divider drag handlers
+  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const startWidth = sidebar.getBoundingClientRect().width;
+    dragRef.current = { startX: e.clientX, startWidth };
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const deltaX = e.clientX - drag.startX;
+    const newWidth = Math.min(500, Math.max(250, drag.startWidth - deltaX));
+    setSidebarWidth(newWidth);
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    dragRef.current = null;
+    document.body.style.userSelect = "";
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+  }, [handleMouseMove]);
+
+  useEffect(() => {
+    return () => {
+      // Cleanup drag listeners on unmount
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [handleMouseMove]);
 
   useEffect(() => {
     clearTimeout(debounceRef.current);
@@ -179,7 +220,10 @@ export function AppView() {
       {/* Left: Main panel area */}
       <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-background">
         {/* Drag region for left side - transparent, above content */}
-        <TitleDragRegion className="fixed top-0 left-0 h-5 z-40 select-none" style={{ right: '400px' }} />
+        <TitleDragRegion
+          className="fixed top-0 left-0 h-5 z-40 select-none"
+          style={{ right: sidebarWidth !== null ? `${sidebarWidth}px` : "clamp(300px, calc(130px + 12vw), 500px)" }}
+        />
         {detailLoading && !detail ? (
           <SkeletonLines count={3} />
         ) : detail ? (
@@ -216,8 +260,18 @@ export function AppView() {
         )}
       </main>
 
+      {/* Resizable divider */}
+      <div
+        className="w-px shrink-0 bg-transparent cursor-col-resize"
+        onMouseDown={handleDividerMouseDown}
+      />
+
       {/* Right: Function panel */}
-      <aside className="w-[400px] shrink-0 flex flex-col bg-card border-l border-border">
+      <aside
+          ref={sidebarRef}
+          className="shrink-0 flex flex-col bg-card border-l border-border"
+          style={{ width: sidebarWidth !== null ? `${sidebarWidth}px` : "clamp(300px, calc(130px + 12vw), 500px)" }}
+        >
         {/* Header with branding + actions - starts from top for seamless title bar */}
         <div className="px-4 pt-[10px] pb-3 border-b border-border flex items-center gap-3">
           <TitleDragRegion className="flex-1 min-w-0 self-stretch flex items-center select-none">
@@ -298,7 +352,10 @@ export function AppView() {
 
       {/* Event detail overlay - covers full height from top */}
       {selectedEvent && (
-        <div className="absolute top-0 right-0 h-full w-[400px] z-30 flex flex-col bg-card border-l border-border shadow-lg">
+        <div
+          className="absolute top-0 right-0 h-full z-30 flex flex-col bg-card border-l border-border shadow-lg"
+          style={{ width: sidebarWidth !== null ? `${sidebarWidth}px` : "clamp(300px, calc(130px + 12vw), 500px)" }}
+        >
           <div className="flex items-center gap-2 px-4 pt-[10px] pb-2 border-b border-border">
             <button
               onClick={handleOverlayClose}
