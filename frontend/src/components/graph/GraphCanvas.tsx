@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import type { EventRow } from "../../ipc/types";
 import type { GraphData, GraphTurn, ChildSession, GraphNode } from "./graph-layout";
-import { buildGraphFromTurns, buildTurnsFromEvents } from "./graph-layout";
+import { buildGraphFromTurns, buildTurnsFromEvents, graphNodeLabelPadding } from "./graph-layout";
 import {
   renderStaticLayer,
   renderLabels,
@@ -19,6 +19,7 @@ interface GraphCanvasProps {
   events?: EventRow[];
   childSessions?: ChildSession[];
   selectedEventId: string | null;
+  graphSessionId?: string;
   selectedSessionId?: string;
   onNodeClick: (eventId: string | null) => void;
 }
@@ -41,12 +42,11 @@ function sizeCanvasToContainer(
 function graphBounds(data: GraphData): { minX: number; minY: number; w: number; h: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of data.nodes) {
-    const padX = n.radius + 80; // label text can extend ~60px beyond node
-    const padY = n.radius + 24; // label below node ~20px
-    if (n.x - padX < minX) minX = n.x - padX;
-    if (n.y - padY < minY) minY = n.y - padY;
-    if (n.x + padX > maxX) maxX = n.x + padX;
-    if (n.y + padY > maxY) maxY = n.y + padY;
+    const labelPadding = graphNodeLabelPadding(n);
+    if (n.x - labelPadding.left < minX) minX = n.x - labelPadding.left;
+    if (n.y - labelPadding.y < minY) minY = n.y - labelPadding.y;
+    if (n.x + labelPadding.right > maxX) maxX = n.x + labelPadding.right;
+    if (n.y + labelPadding.y > maxY) maxY = n.y + labelPadding.y;
   }
   return { minX, minY, w: maxX - minX, h: maxY - minY };
 }
@@ -56,6 +56,7 @@ export function GraphCanvas({
   events,
   childSessions,
   selectedEventId,
+  graphSessionId,
   selectedSessionId,
   onNodeClick,
 }: GraphCanvasProps) {
@@ -118,7 +119,7 @@ export function GraphCanvas({
       return;
     }
 
-    const result = buildGraphFromTurns(turns, childSessions, undefined, undefined, undefined, selectedSessionId);
+    const result = buildGraphFromTurns(turns, childSessions, undefined, undefined, graphSessionId);
     const newData: GraphData = {
       nodes: result.nodes,
       links: result.links,
@@ -133,7 +134,7 @@ export function GraphCanvas({
     dataRef.current = newData;
     dirtyRef.current = true;
     cacheDirtyRef.current = true;
-  }, [graphTurns, events, childSessions, fitToScreen]);
+  }, [graphTurns, events, childSessions, graphSessionId, fitToScreen]);
 
   // Invalidate cache on selection change & animate to selected node
   useEffect(() => {

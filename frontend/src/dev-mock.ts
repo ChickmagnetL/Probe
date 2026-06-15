@@ -8,6 +8,7 @@ import type {
   ImportResult,
   SessionRow,
   SessionDetail,
+  ChildSessionDetail,
   ListSessionsParams,
   EventRow,
   SessionSummary,
@@ -54,16 +55,21 @@ function getSessionDetail(sessionId: string): SessionDetail | null {
   const events = ((target.events as JSONDict[]) ?? []).map(eventToRow);
   const children = ((target.child_sessions as JSONDict[]) ?? [])
     .filter((cs) => !cs.is_synthetic)
-    .map((cs) => {
-      const childEvents = ((cs.events as JSONDict[]) ?? []).map(eventToRow);
-      return { ...sessionSummaryToRow(cs), events: childEvents };
-    });
+    .map(sessionSummaryToChildDetail);
 
   return {
     session: sessionSummaryToRow(target),
     events,
     children,
   };
+}
+
+function sessionSummaryToChildDetail(s: JSONDict): ChildSessionDetail {
+  const events = ((s.events as JSONDict[]) ?? []).map(eventToRow);
+  const children = ((s.child_sessions as JSONDict[]) ?? [])
+    .filter((cs) => !cs.is_synthetic)
+    .map(sessionSummaryToChildDetail);
+  return { ...sessionSummaryToRow(s), events, children };
 }
 
 function eventToRow(e: JSONDict): EventRow {

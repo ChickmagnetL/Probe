@@ -79,6 +79,7 @@ export interface SessionDetail {
 
 export interface ChildSessionDetail extends SessionRow {
   events: EventRow[];
+  children?: ChildSessionDetail[];
 }
 
 export interface SessionRow {

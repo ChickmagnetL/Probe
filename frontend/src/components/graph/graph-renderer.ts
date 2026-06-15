@@ -1,4 +1,10 @@
-import type { GraphNode, GraphData, TurnSpindle } from "./graph-layout";
+import {
+  graphNodeLabelPadding,
+  graphNodeLabelRadius,
+  type GraphNode,
+  type GraphData,
+  type TurnSpindle,
+} from "./graph-layout";
 
 export interface RenderState {
   transform: { x: number; y: number; k: number };
@@ -15,12 +21,35 @@ export interface ViewportBounds {
 }
 
 const LABEL_FONT = "12px -apple-system, sans-serif";
+const SIDE_LABEL_GAP = 8;
+const BELOW_LABEL_GAP = 4;
+
+function drawNodeLabel(
+  ctx: CanvasRenderingContext2D,
+  node: GraphNode,
+  dimmed: boolean,
+) {
+  const r = graphNodeLabelRadius(node);
+  ctx.font = LABEL_FONT;
+  ctx.fillStyle = dimmed ? "rgba(102,102,102,0.35)" : "#666";
+
+  if (node.isAnchor) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(node.label, node.x, node.y + r + BELOW_LABEL_GAP);
+    return;
+  }
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(node.label, node.x + r + SIDE_LABEL_GAP, node.y);
+}
 
 // ── Subagent Marker (R4) ───────────────────────────────
 
 /**
  * Draw a subagent marker: white background circle + colored outer ring + black inner core.
- * White background MUST be drawn first (ribbon passes underneath and gets occluded).
+ * White background MUST be drawn first (guides pass underneath and get occluded).
  */
 function markerSubagent(
   ctx: CanvasRenderingContext2D,
@@ -67,6 +96,16 @@ function isInViewport(
   );
 }
 
+function isNodeLabelInViewport(node: GraphNode, vp: ViewportBounds): boolean {
+  const labelPadding = graphNodeLabelPadding(node);
+  return (
+    node.x + labelPadding.right >= vp.x &&
+    node.x - labelPadding.left <= vp.x + vp.w &&
+    node.y + labelPadding.y >= vp.y &&
+    node.y - labelPadding.y <= vp.y + vp.h
+  );
+}
+
 function isLinkInViewport(
   sx: number,
   sy: number,
@@ -86,129 +125,12 @@ function isLinkInViewport(
   );
 }
 
-// ── Spindle Ribbon Drawing (R2) ─────────────────────────
+// ── Folder Guide Drawing ────────────────────────────────
 
 /**
- * Draw wide ribbon for normal mode (>= 2 intermediates).
- * Two strands: phase 0 (amber) and phase PI (purple).
- * Uses filled quadrilaterals with depth-based width and alpha.
+ * Draw one vertical spine per turn plus horizontal indent guides for child rows.
  */
-function drawRibbon(
-  ctx: CanvasRenderingContext2D,
-  spindle: TurnSpindle,
-  baseAlpha: number,
-) {
-  const { cx, top, pitch, tMax, omega, RFn, isThin } = spindle;
-  if (tMax < 1) return;
-  if (isThin) return;
-
-  const samples = Math.max(120, Math.ceil(tMax * 30));
-  const colors = ["#f59e0b", "#a855f7"];
-  const phases = [0, Math.PI];
-
-  for (let strand = 0; strand < 2; strand++) {
-    const color = colors[strand];
-    const phase = phases[strand];
-
-    for (let i = 0; i < samples; i++) {
-      const t0 = (i / samples) * tMax;
-      const t1 = ((i + 1) / samples) * tMax;
-      const u0 = t0 / tMax;
-      const u1 = t1 / tMax;
-      const R0 = RFn(u0);
-      const R1 = RFn(u1);
-      const y0 = top + t0 * pitch;
-      const y1 = top + t1 * pitch;
-      const c0 = Math.cos(t0 * omega + phase);
-      const c1 = Math.cos(t1 * omega + phase);
-      const x0 = cx + R0 * c0;
-      const x1 = cx + R1 * c1;
-
-      const depth0 = (c0 + 1) / 2;
-      const depth1 = (c1 + 1) / 2;
-      const baseW = 9;
-      const w0 = baseW * (0.35 + 0.65 * depth0);
-      const w1 = baseW * (0.35 + 0.65 * depth1);
-
-      const alpha = baseAlpha * (0.30 + 0.55 * ((depth0 + depth1) / 2));
-      const alphaHex = Math.round(alpha * 255).toString(16).padStart(2, "0");
-      ctx.fillStyle = color + alphaHex;
-
-      ctx.beginPath();
-      ctx.moveTo(x0 - w0 / 2, y0);
-      ctx.lineTo(x0 + w0 / 2, y0);
-      ctx.lineTo(x1 + w1 / 2, y1);
-      ctx.lineTo(x1 - w1 / 2, y1);
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-}
-
-/**
- * Draw thin strand for degenerate mode (<= 0 intermediates, 2-event turn).
- * Two-pass rendering: background (dark) then foreground (bright).
- * Segments split by cos sign for front/back layering.
- */
-function drawThinStrand(
-  ctx: CanvasRenderingContext2D,
-  spindle: TurnSpindle,
-  baseAlpha: number,
-) {
-  const { cx, top, pitch, tMax, omega, RFn, isThin } = spindle;
-  if (tMax < 1 || !isThin) return;
-
-  const samples = Math.max(80, Math.ceil(tMax * 30));
-  const colors = ["#f59e0b", "#a855f7"];
-  const phases = [0, Math.PI];
-
-  for (let strand = 0; strand < 2; strand++) {
-    const color = colors[strand];
-    const phase = phases[strand];
-
-    for (let pass = 0; pass < 2; pass++) {
-      ctx.beginPath();
-      let drawing = false;
-
-      for (let i = 0; i <= samples; i++) {
-        const t = (i / samples) * tMax;
-        const c = Math.cos(t * omega + phase);
-        const wantFront = c > 0;
-
-        if ((pass === 0 && !wantFront) || (pass === 1 && wantFront)) {
-          const u = t / tMax;
-          const x = cx + RFn(u) * c;
-          const y = top + t * pitch;
-          if (drawing) {
-            ctx.lineTo(x, y);
-          } else {
-            ctx.moveTo(x, y);
-            drawing = true;
-          }
-        } else {
-          drawing = false;
-        }
-      }
-
-      if (pass === 0) {
-        ctx.globalAlpha = baseAlpha * 0.33;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.2;
-      } else {
-        ctx.globalAlpha = baseAlpha;
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.2;
-      }
-      ctx.stroke();
-    }
-  }
-  ctx.globalAlpha = 1;
-}
-
-/**
- * Draw all spindles' ribbons with dimming support.
- */
-function drawSpindleRibbons(
+function drawFolderGuides(
   ctx: CanvasRenderingContext2D,
   spindles: TurnSpindle[],
   connectedIds: Set<string>,
@@ -217,25 +139,44 @@ function drawSpindleRibbons(
 ) {
   if (dotMode) return;
 
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.setLineDash([]);
+
   for (const spindle of spindles) {
-    let alpha = 1;
+    let dimmed = false;
     if (isDimming) {
-      let hasConnected = false;
+      dimmed = true;
       for (const pos of spindle.events) {
         if (connectedIds.has(pos.event.event_id)) {
-          hasConnected = true;
+          dimmed = false;
           break;
         }
       }
-      if (!hasConnected) alpha = 0.35;
     }
 
-    if (spindle.isThin) {
-      drawThinStrand(ctx, spindle, alpha);
-    } else {
-      drawRibbon(ctx, spindle, alpha);
+    ctx.globalAlpha = dimmed ? 0.22 : 0.85;
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = dimmed ? 1 : 2;
+    ctx.beginPath();
+    ctx.moveTo(spindle.cx, spindle.top);
+    ctx.lineTo(spindle.cx, spindle.bottom);
+    ctx.stroke();
+
+    ctx.globalAlpha = dimmed ? 0.18 : 0.9;
+    ctx.lineWidth = 1.2;
+    for (const pos of spindle.events) {
+      const dx = pos.x - spindle.cx;
+      if (Math.abs(dx) < 0.5) continue;
+      const endX = pos.x - Math.sign(dx) * 6;
+      ctx.beginPath();
+      ctx.moveTo(spindle.cx, pos.y);
+      ctx.lineTo(endX, pos.y);
+      ctx.stroke();
     }
   }
+
+  ctx.restore();
 }
 
 /**
@@ -262,9 +203,9 @@ export function renderStaticLayer(
   })();
   const isDimming = connectedIds.size > 0;
 
-  // ── Draw spindle ribbons ──────────────────────────────
+  // ── Draw folder guides ────────────────────────────────
   if (spindles) {
-    drawSpindleRibbons(ctx, spindles, connectedIds, isDimming, false);
+    drawFolderGuides(ctx, spindles, connectedIds, isDimming, false);
   }
 
   // ── Draw links (batched by type+dimmed) ─────────────────
@@ -425,15 +366,11 @@ export function renderLabels(
   ctx.save();
   ctx.translate(transform.x, transform.y);
   ctx.scale(transform.k, transform.k);
-  ctx.font = LABEL_FONT;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
 
   for (const node of nodes) {
-    if (!isInViewport(node.x, node.y, node.radius, viewport)) continue;
+    if (!isNodeLabelInViewport(node, viewport)) continue;
     const dimmed = isDimming && !connectedIds.has(node.id);
-    ctx.fillStyle = dimmed ? "rgba(102,102,102,0.35)" : "#666";
-    ctx.fillText(node.label, node.x, node.y + node.radius + 4);
+    drawNodeLabel(ctx, node, dimmed);
   }
 
   ctx.restore();
@@ -473,13 +410,12 @@ export function renderLODLayer(
   })();
   const isDimming = connectedIds.size > 0;
   const drawLabels = labelsVisible && transform.k >= 0.5;
-  const skipDetails = transform.k < 0.3;
   const dotMode = transform.k < 0.15;
   const vp = viewport;
 
-  // ── Draw spindle ribbons ──────────────────────────────
+  // ── Draw folder guides ────────────────────────────────
   if (spindles && !dotMode) {
-    drawSpindleRibbons(ctx, spindles, connectedIds, isDimming, false);
+    drawFolderGuides(ctx, spindles, connectedIds, isDimming, false);
   }
 
   // Links
@@ -562,8 +498,6 @@ export function renderLODLayer(
 
   // Nodes
   for (const node of nodes) {
-    // LOD: in skipDetails mode, hide intermediate nodes but keep anchors and subagent markers
-    if (skipDetails && node.spindleRole === "intermediate") continue;
     if (!isInViewport(node.x, node.y, node.radius, vp)) continue;
 
     const dimmed = isDimming && !connectedIds.has(node.id);
@@ -594,11 +528,7 @@ export function renderLODLayer(
         ctx.stroke();
       }
       if (drawLabels) {
-        ctx.font = LABEL_FONT;
-        ctx.fillStyle = dimmed ? "rgba(102,102,102,0.35)" : "#666";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        ctx.fillText(node.label, node.x, node.y + 8 + 4);
+        drawNodeLabel(ctx, node, dimmed);
       }
       continue;
     }
@@ -629,11 +559,7 @@ export function renderLODLayer(
     }
 
     if (drawLabels) {
-      ctx.font = LABEL_FONT;
-      ctx.fillStyle = dimmed ? "rgba(102,102,102,0.35)" : "#666";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillText(node.label, node.x, node.y + r + 4);
+      drawNodeLabel(ctx, node, dimmed);
     }
   }
 
@@ -713,13 +639,12 @@ export function renderGraph(
 
   const isDimming = connectedIds.size > 0;
   const drawLabels = labelsVisible && transform.k >= 0.5;
-  const skipDetails = transform.k < 0.3;
   const dotMode = transform.k < 0.15;
   const vp = viewport;
 
-  // ── Draw spindle ribbons ──────────────────────────────
+  // ── Draw folder guides ────────────────────────────────
   if (spindles && !dotMode) {
-    drawSpindleRibbons(ctx, spindles, connectedIds, isDimming, false);
+    drawFolderGuides(ctx, spindles, connectedIds, isDimming, false);
   }
 
   // Links
@@ -802,8 +727,6 @@ export function renderGraph(
 
   // Nodes
   for (const node of data.nodes) {
-    // LOD: in skipDetails mode, hide intermediate nodes but keep anchors and subagent markers
-    if (skipDetails && node.spindleRole === "intermediate") continue;
     if (vp && !isInViewport(node.x, node.y, node.radius, vp)) continue;
 
     const dimmed = isDimming && !connectedIds.has(node.id);
@@ -835,11 +758,7 @@ export function renderGraph(
         ctx.stroke();
       }
       if (drawLabels) {
-        ctx.font = LABEL_FONT;
-        ctx.fillStyle = dimmed ? "rgba(102,102,102,0.35)" : "#666";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        ctx.fillText(node.label, node.x, node.y + 8 + 4);
+        drawNodeLabel(ctx, node, dimmed);
       }
       continue;
     }
@@ -871,11 +790,7 @@ export function renderGraph(
     }
 
     if (drawLabels) {
-      ctx.font = LABEL_FONT;
-      ctx.fillStyle = dimmed ? "rgba(102,102,102,0.35)" : "#666";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillText(node.label, node.x, node.y + r + 4);
+      drawNodeLabel(ctx, node, dimmed);
     }
   }
 

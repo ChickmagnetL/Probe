@@ -28,9 +28,9 @@ export interface GraphLink {
   type: "primary" | "branch" | "spawn";
   tint?: string;
   isThin?: boolean;
-  /** Spawn link start offset from source node x (e.g. +8 past marker outer ring) */
+  /** Spawn link start offset from source node x (e.g. past marker outer ring) */
   spawnFromDx?: number;
-  /** Spawn link end offset from target node x (e.g. -(Rpeak_sub+4) left of child spindle) */
+  /** Spawn link end offset from target node x. */
   spawnToDx?: number;
 }
 
@@ -67,39 +67,44 @@ export interface ChildSession {
   child_sessions?: ChildSession[];
 }
 
-/** Position of one event along a spindle curve */
+/** Position of one event in the folder tree */
 export interface TurnEventPosition {
   x: number;
   y: number;
   event: TurnEvent;
   index: number;
+  isAnchor: boolean;
+  isInput: boolean;
 }
 
-/** Pre-computed geometry for rendering one turn's spindle ribbon */
+/** Pre-computed geometry for rendering one turn's folder guide */
 export interface TurnSpindle {
   turnId: string;
   cx: number;
   top: number;
   bottom: number;
-  pitch: number;
-  tMax: number;
-  omega: number;
-  RPeak: number;
-  RFn: (u: number) => number;
   events: TurnEventPosition[];
-  isThin: boolean;
+  tint?: string;
 }
 
 // ── Constants ───────────────────────────────────────────
 
-const SPINDLE_PITCH = 50;
-const SPINDLE_PITCH_DEGENERATE = 130;
-const SPINDLE_R_PEAK = 58;
-const SPINDLE_R_PEAK_DEGENERATE = 14;
-const ANCHOR_RADIUS = 11;
-const ANCHOR_RADIUS_DEGENERATE = 9;
-const INTERMEDIATE_RADIUS = 5;
-const SUBAGENT_MARKER_RADIUS = 8;
+const TURN_STEP_GAP = 28;
+const TURN_GAP = 35;
+const FOLDER_INDENT_STEP = 20;
+const CHILD_SESSION_OFFSET_X = 240;
+const CHILD_SESSION_OFFSET_Y = 15;
+const CHILD_SESSION_LANE_STEP = 180;
+const ANCHOR_RADIUS = 7.5;
+const INTERMEDIATE_RADIUS = 4.5;
+const SUBAGENT_MARKER_RADIUS = 6;
+const SUBAGENT_LABEL_RADIUS = 8;
+const ANCHOR_LABEL_BOUNDS_PAD = 80;
+const SIDE_LABEL_BOUNDS_GAP = 8;
+const SIDE_LABEL_BOUNDS_LEFT_PAD = 16;
+const SIDE_LABEL_MIN_WIDTH = 80;
+const SIDE_LABEL_MAX_WIDTH = 280;
+const LABEL_CHAR_WIDTH = 7;
 
 const SUBAGENT_PALETTE = [
   "#dc2626", "#0891b2", "#16a34a",
@@ -107,39 +112,37 @@ const SUBAGENT_PALETTE = [
   "#7f1d1d", "#164e63", "#14532d",
 ];
 
-const SUBAGENT_LANE_BASE = 230;
-
 function subagentTintAt(indexInTurn: number): string {
   return SUBAGENT_PALETTE[indexInTurn % SUBAGENT_PALETTE.length];
 }
 
-function subagentLaneStep(subagentCount: number): number {
-  if (subagentCount <= 1) return 0;
-  if (subagentCount <= 3) return 180;
-  if (subagentCount <= 6) return 120;
-  if (subagentCount <= 9) return 100;
-  return 80;
-}
-
-/** R7.1: Adaptive RPeak for child spindles based on sibling subagent count */
-function childRPeak(subagentCount: number): number {
-  if (subagentCount <= 1) return 50;
-  if (subagentCount <= 3) return 36;
-  if (subagentCount <= 6) return 30;
-  if (subagentCount <= 9) return 26;
-  return 24;
-}
-
-/** R7.1: Adaptive pitch for child spindles based on sibling subagent count */
-function childPitch(subagentCount: number): number {
-  if (subagentCount <= 1) return 42;
-  if (subagentCount <= 3) return 32;
-  if (subagentCount <= 6) return 28;
-  if (subagentCount <= 9) return 26;
-  return 24;
-}
-
 const PADDING = 60;
+
+export function graphNodeLabelRadius(
+  node: Pick<GraphNode, "radius" | "spindleRole">,
+): number {
+  return node.spindleRole === "subagent" ? SUBAGENT_LABEL_RADIUS : node.radius;
+}
+
+export function graphNodeLabelPadding(
+  node: Pick<GraphNode, "isAnchor" | "label" | "radius" | "spindleRole">,
+): { left: number; right: number; y: number } {
+  const r = graphNodeLabelRadius(node);
+  if (node.isAnchor) {
+    const padX = r + ANCHOR_LABEL_BOUNDS_PAD;
+    return { left: padX, right: padX, y: r + 24 };
+  }
+
+  const labelWidth = Math.min(
+    SIDE_LABEL_MAX_WIDTH,
+    Math.max(SIDE_LABEL_MIN_WIDTH, node.label.length * LABEL_CHAR_WIDTH),
+  );
+  return {
+    left: r + SIDE_LABEL_BOUNDS_LEFT_PAD,
+    right: r + SIDE_LABEL_BOUNDS_GAP + labelWidth,
+    y: Math.max(r + 10, 16),
+  };
+}
 
 // ── Layout Builder ──────────────────────────────────────
 
@@ -148,7 +151,6 @@ export function buildGraphFromTurns(
   childSessions?: ChildSession[],
   startX = PADDING,
   startY = PADDING,
-  overrides?: { RPeak?: number; pitch?: number },
   sessionId?: string,
 ): GraphData & { totalWidth: number; totalHeight: number } {
   const nodes: GraphNode[] = [];
@@ -168,20 +170,21 @@ export function buildGraphFromTurns(
   let lastAnchorId: string | null = null;
 
   for (const turn of turns) {
-    const result = layoutTurn(turn, startX, currentY, sessionMap, overrides, sessionId);
-    // Link from previous turn's anchor to this turn's input anchor
-    if (lastAnchorId && result.nodes.length > 0) {
-      const target = result.nodes.find(n => n.isInput) ?? result.nodes[0];
+    const result = layoutTurn(turn, startX, currentY, sessionMap, sessionId);
+    const mainSpindle = result.spindles[0];
+    // Link previous turn's anchor to this turn's first main-spine anchor.
+    if (lastAnchorId && mainSpindle) {
+      const target = firstMainAnchor(mainSpindle);
       if (target) {
-        links.push({ source: lastAnchorId, target: target.id, type: "primary" });
+        links.push({ source: lastAnchorId, target: target.event.event_id, type: "primary" });
       }
     }
     // Update lastAnchorId to this turn's last anchor (output preferred, else input)
-    const lastPos = lastOutputAnchor(result.spindles);
+    const lastPos = mainSpindle ? lastMainAnchor(mainSpindle) : null;
     if (lastPos) {
       lastAnchorId = lastPos.event.event_id;
     }
-    // If no output anchor, keep lastAnchorId from previous turn (don't reset to null)
+    // If the turn has no main anchor, keep lastAnchorId from previous turn.
     nodes.push(...result.nodes);
     links.push(...result.links);
     spindles.push(...result.spindles);
@@ -190,7 +193,8 @@ export function buildGraphFromTurns(
 
   let maxNodeX = startX;
   for (const n of nodes) {
-    if (n.x + n.radius + 80 > maxNodeX) maxNodeX = n.x + n.radius + 80;
+    const { right } = graphNodeLabelPadding(n);
+    if (n.x + right > maxNodeX) maxNodeX = n.x + right;
   }
   const totalWidth = maxNodeX + PADDING;
   const totalHeight = currentY + PADDING;
@@ -220,80 +224,29 @@ export function buildGraphFromTurns(
  * - middle events sorted by source_line_no then timestamp
  */
 function collectTurnEvents(turn: GraphTurn): TurnEvent[] {
-  const middle = [
+  const middle = mergeToolPairs([
     ...(turn.input_details ?? []),
     ...(turn.output_details ?? []),
-  ].sort(detailSort);
+  ].sort(detailSort));
 
   const events: TurnEvent[] = [];
   if (turn.input) events.push(turn.input);
   events.push(...middle);
   if (turn.output) events.push(turn.output);
-  return mergeToolCallPairs(events);
+  return events;
 }
 
-/**
- * Merge tool_call + tool_output pairs into single events.
- * Uses name-based matching: indexes tool_call events by tool name,
- * then finds the matching tool_call for each tool_output.
- * Falls back to matching the last unmatched tool_call if name lookup fails.
- */
-function mergeToolCallPairs(events: TurnEvent[]): TurnEvent[] {
-  const callMap = new Map<string, number>(); // tool_name → index in result
-  const result: TurnEvent[] = [];
-
-  for (const ev of events) {
-    if (ev.kind === "tool_call") {
-      const meta = ev.metadata as string | Record<string, unknown> | null | undefined;
-      const toolName = extractToolName(meta);
-      const key = toolName || `__idx_${result.length}`;
-      result.push(ev);
-      callMap.set(key, result.length - 1);
-    } else if (ev.kind === "tool_output") {
-      // Try to find matching tool_call by tool name
-      let matched = false;
-      const meta = ev.metadata as string | Record<string, unknown> | null | undefined;
-      if (meta) {
-        const outputToolName = extractToolName(meta);
-        if (outputToolName && callMap.has(outputToolName)) {
-          const idx = callMap.get(outputToolName)!;
-          result[idx] = { ...result[idx], output_event_id: ev.event_id };
-          matched = true;
-        }
-      }
-      // Fallback: match with last unmatched tool_call
-      if (!matched) {
-        for (const [, idx] of callMap) {
-          if (!result[idx].output_event_id) {
-            result[idx] = { ...result[idx], output_event_id: ev.event_id };
-            matched = true;
-            break;
-          }
-        }
-      }
-      // If still unmatched, keep as separate node
-      if (!matched) {
-        result.push(ev);
-      }
-    } else {
-      result.push(ev);
-    }
-  }
-  return result;
-}
-
-// ── Spindle Layout ──────────────────────────────────────
+// ── Folder Tree Layout ──────────────────────────────────
 
 /**
- * Layout one turn as a DNA-spindle shape.
- * Returns nodes, links, spindles, and the Y offset for the next turn.
+ * Layout one turn as a compact folder-indented tree.
+ * Returns nodes, links, folder guides, and the Y offset for the next turn.
  */
 function layoutTurn(
   turn: GraphTurn,
   originX: number,
   originY: number,
   sessionMap: Map<string, ChildSession>,
-  overrides?: { RPeak?: number; pitch?: number },
   sessionId?: string,
 ): { nodes: GraphNode[]; links: GraphLink[]; spindles: TurnSpindle[]; nextY: number } {
   const nodes: GraphNode[] = [];
@@ -302,80 +255,32 @@ function layoutTurn(
 
   const events = collectTurnEvents(turn);
   if (events.length === 0) {
-    return { nodes, links, spindles: turnSpindles, nextY: originY + SPINDLE_PITCH };
+    return { nodes, links, spindles: turnSpindles, nextY: originY + TURN_GAP };
   }
-
-  // Degenerate: single event, just a dot
-  if (events.length === 1) {
-    const ev = events[0];
-    const node: GraphNode = {
-      id: ev.event_id,
-      eventId: ev.event_id,
-      label: kindLabel(ev.kind),
-      kind: ev.kind,
-      x: originX,
-      y: originY,
-      radius: ANCHOR_RADIUS,
-      color: kindColor(ev.kind),
-      filled: true,
-      strokeWidth: 2,
-      isAnchor: true,
-      isInput: true,
-      spindleRole: "anchor",
-      sessionId,
-      metadata: ev as Record<string, unknown>,
-    };
-    nodes.push(node);
-    const bottom = originY;
-    turnSpindles.push({
-      turnId: turn.turn_id,
-      cx: originX,
-      top: originY,
-      bottom,
-      pitch: SPINDLE_PITCH_DEGENERATE,
-      tMax: 0,
-      omega: Math.PI * 0.8,
-      RPeak: SPINDLE_R_PEAK_DEGENERATE,
-      RFn: () => 0,
-      events: [{ x: originX, y: originY, event: ev, index: 0 }],
-      isThin: true,
-    });
-    return { nodes, links, spindles: turnSpindles, nextY: originY + SPINDLE_PITCH };
-  }
-
-  // ── Normal / Degenerate spindle geometry (R1) ────────────
-  const tMax = events.length - 1;
-  const intermediates = events.length - 2;
-  const isThin = intermediates <= 0;
-  const pitch = isThin ? SPINDLE_PITCH_DEGENERATE : (overrides?.pitch ?? SPINDLE_PITCH);
-  const RPeak = isThin ? SPINDLE_R_PEAK_DEGENERATE : (overrides?.RPeak ?? SPINDLE_R_PEAK);
-  const anchorR = isThin ? ANCHOR_RADIUS_DEGENERATE : ANCHOR_RADIUS;
-
-  let omega: number;
-  if (isThin) {
-    omega = Math.PI * 0.8;
-  } else {
-    const targetTwists = Math.max(0.7, tMax / 3);
-    omega = (targetTwists * 2 * Math.PI) / tMax;
-  }
-
-  const RFn = (u: number) => RPeak * Math.sin(Math.PI * u);
 
   const cx = originX;
-  const top = originY;
-  const bottom = top + tMax * pitch;
+  const eventTop = originY;
+  const eventBottom = eventTop + (events.length - 1) * TURN_STEP_GAP;
 
   // Compute event positions
   const eventPositions: TurnEventPosition[] = [];
   for (let i = 0; i < events.length; i++) {
-    const t = i;
-    const u = t / tMax;
-    const R = RFn(u);
-    const y = top + t * pitch;
-    const phase = i % 2 === 0 ? 0 : Math.PI;
-    const x = cx + R * Math.cos(t * omega + phase);
-    eventPositions.push({ x, y, event: events[i], index: i });
+    const event = events[i];
+    const role = mainSpineAnchorRole(turn, event);
+    const y = eventTop + i * TURN_STEP_GAP;
+    const x = role ? cx : cx + indentForKind(event.kind);
+    eventPositions.push({
+      x,
+      y,
+      event: events[i],
+      index: i,
+      isAnchor: role !== null,
+      isInput: role === "input",
+    });
   }
+  const anchorPositions = eventPositions.filter((pos) => pos.isAnchor);
+  const spineTop = anchorPositions[0]?.y ?? eventTop;
+  const spineBottom = anchorPositions[anchorPositions.length - 1]?.y ?? spineTop;
 
   // Create nodes for each event
   const totalSubagentsForNodes = countSubagentSessions(events);
@@ -383,7 +288,6 @@ function layoutTurn(
   for (let i = 0; i < eventPositions.length; i++) {
     const pos = eventPositions[i];
     const ev = pos.event;
-    const isAnchor = i === 0 || i === tMax;
 
     if (ev.kind === "subagent_session") {
       // Subagent marker node
@@ -410,7 +314,7 @@ function layoutTurn(
       };
       nodes.push(markerNode);
       subagentIdx++;
-    } else if (isAnchor) {
+    } else if (pos.isAnchor) {
       // Anchor node (user_input or assistant_output)
       const node: GraphNode = {
         id: ev.event_id,
@@ -419,12 +323,12 @@ function layoutTurn(
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
-        radius: anchorR,
+        radius: ANCHOR_RADIUS,
         color: kindColor(ev.kind),
         filled: true,
         strokeWidth: 2,
         isAnchor: true,
-        isInput: i === 0,
+        isInput: pos.isInput,
         spindleRole: "anchor",
         sessionId,
         metadata: ev as Record<string, unknown>,
@@ -453,25 +357,19 @@ function layoutTurn(
     }
   }
 
-  // Create spindle record for ribbon rendering
+  // Create folder-guide record for spine rendering.
   turnSpindles.push({
     turnId: turn.turn_id,
     cx,
-    top,
-    bottom,
-    pitch,
-    tMax,
-    omega,
-    RPeak,
-    RFn,
+    top: spineTop,
+    bottom: spineBottom,
     events: eventPositions,
-    isThin,
   });
 
   // ── Handle subagent sessions (recursive) ──────────────
   let subagentLaneIdx = 0;
   const totalSubagents = countSubagentSessions(events);
-  const laneStep = subagentLaneStep(totalSubagents);
+  let turnMaxY = eventBottom;
 
   for (let i = 0; i < eventPositions.length; i++) {
     const pos = eventPositions[i];
@@ -486,46 +384,167 @@ function layoutTurn(
 
     const multiSub = totalSubagents >= 2;
     const tint = multiSub ? subagentTintAt(subagentLaneIdx) : "#475569";
-    const subCX = cx + SUBAGENT_LANE_BASE + subagentLaneIdx * laneStep;
-    const subTop = pos.y;
-
-    // R7.1: Adaptive child spindle sizing based on sibling subagent count
-    const cRPeak = childRPeak(totalSubagents);
-    const cPitch = childPitch(totalSubagents);
+    const subCX = cx + CHILD_SESSION_OFFSET_X + subagentLaneIdx * CHILD_SESSION_LANE_STEP;
+    const subTop = pos.y + CHILD_SESSION_OFFSET_Y;
 
     const childData = buildGraphFromTurns(
       child.graph_turns,
       child.child_sessions,
       subCX,
       subTop,
-      { RPeak: cRPeak, pitch: cPitch },
       child.session_id,
     );
 
     nodes.push(...childData.nodes);
     links.push(...childData.links);
     if (childData.spindles) turnSpindles.push(...childData.spindles);
+    const childBottom = maxNodeBottom(childData.nodes);
+    if (childBottom !== null && childBottom > turnMaxY) turnMaxY = childBottom;
 
-    // Spawn link from parent marker to child's first input anchor (R6)
+    // Spawn link from parent marker to child's first available anchor.
     if (childData.nodes.length > 0) {
-      const childTarget = childData.nodes.find(n => n.isInput) ?? childData.nodes[0];
+      const childTarget = childData.nodes.find(n => n.isInput)
+        ?? childData.nodes.find(n => n.isAnchor)
+        ?? childData.nodes[0];
       links.push({
         source: ev.event_id,
         target: childTarget.id,
         type: "spawn",
         tint: multiSub ? tint : undefined,
-        spawnFromDx: 8,
-        spawnToDx: -(cRPeak + 4),
+        spawnFromDx: SUBAGENT_MARKER_RADIUS + 4,
+        spawnToDx: 0,
       });
     }
 
     subagentLaneIdx++;
   }
 
-  return { nodes, links, spindles: turnSpindles, nextY: bottom + SPINDLE_PITCH };
+  return { nodes, links, spindles: turnSpindles, nextY: turnMaxY + TURN_GAP };
 }
 
 // ── Helpers ─────────────────────────────────────────────
+
+function indentForKind(kind: string): number {
+  if (kind === "reasoning") return FOLDER_INDENT_STEP;
+  if (kind === "tool_call" || kind === "tool_output") return FOLDER_INDENT_STEP * 2;
+  if (kind === "subagent_session") return FOLDER_INDENT_STEP * 3;
+  return FOLDER_INDENT_STEP;
+}
+
+function mainSpineAnchorRole(turn: GraphTurn, event: TurnEvent): "input" | "output" | null {
+  if (turn.input?.event_id === event.event_id && event.kind === "user_input") {
+    return "input";
+  }
+  if (turn.output?.event_id === event.event_id && event.kind === "assistant_output") {
+    return "output";
+  }
+  return null;
+}
+
+function mergeToolPairs(events: TurnEvent[]): TurnEvent[] {
+  const outputByCallId = new Map<string, TurnEvent>();
+  for (const event of events) {
+    if (event.kind !== "tool_output") continue;
+    const callId = extractCallId(event);
+    if (callId && !outputByCallId.has(callId)) {
+      outputByCallId.set(callId, event);
+    }
+  }
+
+  const outputEventIdsToSkip = new Set<string>();
+  const callOutputIds = new Map<string, string>();
+  for (const event of events) {
+    if (event.kind !== "tool_call") continue;
+    const callId = extractCallId(event);
+    const output = callId ? outputByCallId.get(callId) : undefined;
+    if (!output) continue;
+    outputEventIdsToSkip.add(output.event_id);
+    callOutputIds.set(event.event_id, output.event_id);
+  }
+
+  const merged: TurnEvent[] = [];
+  for (const event of events) {
+    if (event.kind === "tool_output" && outputEventIdsToSkip.has(event.event_id)) {
+      continue;
+    }
+    const outputEventId = callOutputIds.get(event.event_id);
+    merged.push(outputEventId ? { ...event, output_event_id: outputEventId } : event);
+  }
+  return merged;
+}
+
+function extractCallId(event: TurnEvent): string | null {
+  const direct = stringField(event.call_id);
+  if (direct) return direct;
+
+  const rawText = stringField(event.raw_text);
+  if (rawText) {
+    const fromRaw = extractCallIdFromRawText(rawText);
+    if (fromRaw) return fromRaw;
+  }
+
+  return extractCallIdFromMetadata(event.metadata);
+}
+
+function extractCallIdFromMetadata(metadata: unknown): string | null {
+  if (!metadata) return null;
+
+  const parsed = typeof metadata === "string"
+    ? parseJsonObject(metadata)
+    : isRecord(metadata)
+      ? metadata
+      : null;
+  if (!parsed) return null;
+
+  const direct = stringField(parsed.call_id);
+  if (direct) return direct;
+
+  const rawText = stringField(parsed.raw_text);
+  if (rawText) {
+    const fromRaw = extractCallIdFromRawText(rawText);
+    if (fromRaw) return fromRaw;
+  }
+
+  const nestedMetadata = parsed.metadata;
+  if (typeof nestedMetadata === "string" || isRecord(nestedMetadata)) {
+    return extractCallIdFromMetadata(nestedMetadata);
+  }
+
+  return null;
+}
+
+function extractCallIdFromRawText(rawText: string): string | null {
+  const parsed = parseJsonObject(rawText);
+  if (!parsed) return null;
+  const payload = isRecord(parsed.payload) ? parsed.payload : parsed;
+  return stringField(payload.call_id);
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function maxNodeBottom(nodes: GraphNode[]): number | null {
+  let maxY: number | null = null;
+  for (const node of nodes) {
+    const bottom = node.y + node.radius;
+    if (maxY === null || bottom > maxY) maxY = bottom;
+  }
+  return maxY;
+}
 
 function detailSort(a: TurnEvent, b: TurnEvent): number {
   const lineA = (a.source_line_no as number) ?? Number.MAX_SAFE_INTEGER;
@@ -549,7 +568,27 @@ export function lastOutputAnchor(spindles: TurnSpindle[]): TurnEventPosition | n
   for (let i = spindles.length - 1; i >= 0; i--) {
     const s = spindles[i];
     for (let j = s.events.length - 1; j >= 0; j--) {
-      if (s.events[j].event.kind === "assistant_output") return s.events[j];
+      if (s.events[j].isAnchor && s.events[j].event.kind === "assistant_output") return s.events[j];
+    }
+  }
+  return null;
+}
+
+function firstMainAnchor(spindle: TurnSpindle): TurnEventPosition | null {
+  for (const pos of spindle.events) {
+    if (pos.isAnchor) return pos;
+  }
+  return null;
+}
+
+function lastMainAnchor(spindle: TurnSpindle): TurnEventPosition | null {
+  const outputAnchor = lastOutputAnchor([spindle]);
+  if (outputAnchor) return outputAnchor;
+
+  for (let i = spindle.events.length - 1; i >= 0; i--) {
+    const pos = spindle.events[i];
+    if (pos.isAnchor) {
+      return pos;
     }
   }
   return null;
@@ -628,7 +667,7 @@ export function buildTurnsFromEvents(events: RawEvent[]): GraphTurn[] {
 function resolveInput(events: RawEvent[]): [TurnEvent | null, TurnEvent[]] {
   if (events.length === 0) return [null, []];
 
-  const userEvents = events.filter((e) => e.kind === "user_input" || e.kind === "agents_md");
+  const userEvents = events.filter((e) => e.kind === "user_input");
   const anchor = pickPrimaryInput(userEvents);
   const details: TurnEvent[] = [];
 
@@ -655,8 +694,8 @@ function resolveOutput(events: RawEvent[]): [TurnEvent | null, TurnEvent[]] {
 function pickPrimaryInput(events: RawEvent[]): TurnEvent | null {
   if (events.length === 0) return null;
   const nonAux = events.filter((e) => !looksLikeAux(e));
-  const picked = nonAux.length > 0 ? nonAux[nonAux.length - 1] : events[events.length - 1];
-  return toTurnEvent(picked);
+  const picked = nonAux[nonAux.length - 1];
+  return picked ? toTurnEvent(picked) : null;
 }
 
 function looksLikeAux(ev: RawEvent): boolean {

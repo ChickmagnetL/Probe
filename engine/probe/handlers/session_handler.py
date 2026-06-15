@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from typing import Any
 
 from probe.storage import get_connection
@@ -33,13 +34,19 @@ def handle_detail(params: dict[str, Any]) -> dict[str, Any]:
         raise KeyError(f"session not found: {session_id}")
 
     events = event_dao.get_by_session_id(conn, session_id)
-    children = session_dao.get_children(conn, session_id)
-    children_with_events = []
-    for child in children:
-        child_events = event_dao.get_by_session_id(conn, child["id"])
-        children_with_events.append({**child, "events": child_events})
+    children_with_events = _children_with_events(conn, session_id)
 
     return {"session": session, "events": events, "children": children_with_events}
+
+
+def _children_with_events(conn: sqlite3.Connection, parent_id: str) -> list[dict[str, Any]]:
+    children = session_dao.get_children(conn, parent_id)
+    result = []
+    for child in children:
+        child_events = event_dao.get_by_session_id(conn, child["id"])
+        child_children = _children_with_events(conn, child["id"])
+        result.append({**child, "events": child_events, "children": child_children})
+    return result
 
 
 def handle_delete(params: dict[str, Any]) -> dict[str, Any]:

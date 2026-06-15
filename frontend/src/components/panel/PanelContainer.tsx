@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePanelStore } from "../../stores/panel";
 import { useSessionStore } from "../../stores/session";
 import { DraggableDivider } from "./DraggableDivider";
@@ -15,6 +15,14 @@ import { RawView } from "../raw/RawView";
 // ── Pill tab bar ───────────────────────────────────────
 
 const VIEW_TABS: ViewKind[] = ["graph", "timeline", "chat", "raw"];
+
+function childDetailToGraphSession(child: ChildSessionDetail): ChildSession {
+  return {
+    session_id: child.id,
+    graph_turns: buildTurnsFromEvents(child.events),
+    child_sessions: child.children?.map(childDetailToGraphSession),
+  };
+}
 
 interface PillTabBarProps {
   activeView: ViewKind;
@@ -58,8 +66,9 @@ const PillTabBar = memo(function PillTabBar({
   }, [activeView]);
 
   // Use requestAnimationFrame to position indicator after DOM update
-  useMemo(() => {
-    requestAnimationFrame(updateIndicator);
+  useEffect(() => {
+    const frameId = requestAnimationFrame(updateIndicator);
+    return () => cancelAnimationFrame(frameId);
   }, [updateIndicator]);
 
   return (
@@ -232,10 +241,7 @@ function PanelViewContent({ view }: PanelViewContentProps) {
   // R5: Convert graphDetail.children to ChildSession[] for GraphCanvas
   const childSessions = useMemo((): ChildSession[] | undefined => {
     if (!graphDetail?.children || graphDetail.children.length === 0) return undefined;
-    return graphDetail.children.map((child) => ({
-      session_id: child.id,
-      graph_turns: buildTurnsFromEvents(child.events),
-    }));
+    return graphDetail.children.map(childDetailToGraphSession);
   }, [graphDetail?.children]);
 
   // selectedSessionId for session-based dimming: use the currently selected
@@ -263,6 +269,7 @@ function PanelViewContent({ view }: PanelViewContentProps) {
         events={graphEvents}
         childSessions={childSessions}
         selectedEventId={selectedEventId}
+        graphSessionId={graphDetail?.sessionId}
         selectedSessionId={selectedSessionId}
         onNodeClick={handleNodeClick}
       />
