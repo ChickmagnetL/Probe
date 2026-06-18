@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { GraphNode } from "./graph-layout";
-import { extractFields, mergeMetaLayers, type EventField } from "../../lib/event-fields";
+import type { EventField } from "../../lib/event-fields";
+import { extractGraphTooltipFields } from "./graph-tooltip-fields";
 
 interface GraphTooltipProps {
   node: GraphNode;
@@ -13,8 +14,7 @@ interface GraphTooltipProps {
 export function GraphTooltip({ node, x, y, viewportWidth, viewportHeight }: GraphTooltipProps) {
   const fields: EventField[] = useMemo(() => {
     if (!node.metadata) return [];
-    const merged = mergeMetaLayers(node.metadata as Record<string, unknown> | undefined);
-    return extractFields(merged, node.kind);
+    return extractGraphTooltipFields(node.metadata as Record<string, unknown> | undefined, node.kind);
   }, [node]);
 
   if (fields.length === 0) return null;

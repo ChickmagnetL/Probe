@@ -8,6 +8,7 @@ import { EmptyState } from "../components/shared/EmptyState";
 import {
   MetaCardsGrid,
   ContentRenderer,
+  TokenUsageSection,
   MetadataSection,
   MergedToolCallContent,
 } from "../components/shared/EventDetailContent";
@@ -33,6 +34,8 @@ function extractCallId(metadata: string | Record<string, unknown> | null | undef
   } else {
     parsed = metadata;
   }
+  const directCallId = parsed.call_id;
+  if (typeof directCallId === "string" && directCallId) return directCallId;
   const rawText = parsed.raw_text;
   if (typeof rawText !== "string") return null;
   try {
@@ -381,6 +384,7 @@ export function AppView() {
             ) : (
               <>
                 <MetaCardsGrid event={selectedEvent} />
+                <TokenUsageSection event={selectedEvent} />
                 <ContentRenderer event={selectedEvent} />
                 <MetadataSection
                   metadata={selectedEvent.metadata}

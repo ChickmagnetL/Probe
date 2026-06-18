@@ -105,6 +105,14 @@ const SIDE_LABEL_BOUNDS_LEFT_PAD = 16;
 const SIDE_LABEL_MIN_WIDTH = 80;
 const SIDE_LABEL_MAX_WIDTH = 280;
 const LABEL_CHAR_WIDTH = 7;
+const TOOLTIP_DISPLAY_FIELDS = [
+  "title",
+  "summary",
+  "detail_note",
+  "content",
+  "content_label",
+  "intro",
+];
 
 const SUBAGENT_PALETTE = [
   "#dc2626", "#0891b2", "#16a34a",
@@ -308,7 +316,7 @@ function layoutTurn(
         isInput: false,
         sessionId: ev.child_session_id,
         spindleRole: "subagent",
-        metadata: ev as Record<string, unknown>,
+        metadata: tooltipMetadataForEvent(ev),
         // Only set subagentTint for multi-agent (PRD R6: single agent has no tint circle)
         ...(multiSub ? { subagentTint: tint } : {}),
       };
@@ -331,7 +339,7 @@ function layoutTurn(
         isInput: pos.isInput,
         spindleRole: "anchor",
         sessionId,
-        metadata: ev as Record<string, unknown>,
+        metadata: tooltipMetadataForEvent(ev),
       };
       nodes.push(node);
     } else {
@@ -351,7 +359,7 @@ function layoutTurn(
         isInput: false,
         spindleRole: "intermediate",
         sessionId,
-        metadata: ev as Record<string, unknown>,
+        metadata: tooltipMetadataForEvent(ev),
       };
       nodes.push(node);
     }
@@ -530,11 +538,55 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringField(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function omitTooltipDisplayFields(record: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...record };
+  for (const field of TOOLTIP_DISPLAY_FIELDS) {
+    delete next[field];
+  }
+  return next;
+}
+
+function tooltipMetadataForEvent(ev: TurnEvent): Record<string, unknown> {
+  const structuredEvent = omitTooltipDisplayFields(ev);
+
+  const raw = isRecord(ev.metadata) ? ev.metadata : null;
+  const rawMeta = raw
+    ? isRecord(raw.metadata)
+      ? raw.metadata
+      : typeof raw.metadata === "string"
+        ? parseJsonObject(raw.metadata)
+        : null
+    : null;
+  const sourceRecord = isRecord(ev.source_record) ? ev.source_record : null;
+  const sourcePayload = sourceRecord && isRecord(sourceRecord.payload) ? sourceRecord.payload : null;
+  delete structuredEvent.metadata;
+  delete structuredEvent.source_record;
+  const eventType = stringField(rawMeta?.event_type)
+    ?? stringField(raw?.event_type)
+    ?? stringField(sourceRecord?.event_type)
+    ?? stringField(sourcePayload?.type)
+    ?? stringField(ev.event_type)
+    ?? ev.kind;
+
+  const tooltipMeta: Record<string, unknown> = {
+    ...structuredEvent,
+    ...(raw ? omitTooltipDisplayFields(raw) : {}),
+    ...(rawMeta ? omitTooltipDisplayFields(rawMeta) : {}),
+    ...(sourceRecord ? omitTooltipDisplayFields(sourceRecord) : {}),
+    ...(sourcePayload ? omitTooltipDisplayFields(sourcePayload) : {}),
+    event_type: eventType,
+  };
+  delete tooltipMeta.metadata;
+  delete tooltipMeta.source_record;
+  delete tooltipMeta.payload;
+  return tooltipMeta;
 }
 
 function maxNodeBottom(nodes: GraphNode[]): number | null {

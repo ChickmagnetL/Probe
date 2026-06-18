@@ -53,3 +53,31 @@ def test_handle_detail_returns_nested_children(monkeypatch: pytest.MonkeyPatch, 
 def test_handle_detail_requires_session_id() -> None:
     with pytest.raises(ValueError, match="session_id is required"):
         session_handler.handle_detail({})
+
+
+def test_handle_detail_preserves_event_metadata_fields(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    conn = open_connection(tmp_path / "probe.sqlite")
+    initialize_schema(conn)
+    session_dao.upsert(conn, {"id": "root", "is_subagent": 0, "start_time": "2026-01-01T00:00:00Z"})
+    event_dao.insert(
+        conn,
+        {
+            "event_id": "tool-event",
+            "session_id": "root",
+            "kind": "tool_event",
+            "timestamp": "2026-01-01T00:01:00Z",
+            "record_type": "event_msg",
+            "payload_type": "exec_command_end",
+            "command": ["npm", "run", "build"],
+            "event_type": "exec_command_end",
+        },
+    )
+    conn.commit()
+    monkeypatch.setattr(session_handler, "get_connection", lambda: conn)
+
+    detail = session_handler.handle_detail({"session_id": "root"})
+
+    metadata = detail["events"][0]["metadata"]
+    assert metadata["record_type"] == "event_msg"
+    assert metadata["payload_type"] == "exec_command_end"
+    assert metadata["command"] == ["npm", "run", "build"]

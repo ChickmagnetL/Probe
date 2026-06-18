@@ -1,6 +1,5 @@
-import type { EventRow } from "../../ipc/types";
-import { formatTime } from "../../lib/format";
-import { kindLabel } from "../graph/graph-labels";
+import type { EventRow, TokenUsage } from "../../ipc/types";
+import { buildEventMetadataCards } from "../../lib/event-metadata-cards";
 
 // ── MetaCard ─────────────────────────────────────────────
 
@@ -20,15 +19,12 @@ export function MetaCard({ label, value }: { label: string; value: string }) {
 // ── MetaCardsGrid ────────────────────────────────────────
 
 export function MetaCardsGrid({ event }: { event: EventRow }) {
+  const cards = buildEventMetadataCards({ event });
   return (
     <div className="grid grid-cols-2 gap-2">
-      <MetaCard label="Role" value={event.role ?? "-"} />
-      <MetaCard label="Kind" value={kindLabel(event.kind)} />
-      <MetaCard
-        label="Time"
-        value={event.timestamp ? formatTime(event.timestamp) : "-"}
-      />
-      {event.phase && <MetaCard label="Phase" value={event.phase} />}
+      {cards.map((card) => (
+        <MetaCard key={`${card.label}:${card.value}`} label={card.label} value={card.value} />
+      ))}
     </div>
   );
 }
@@ -45,6 +41,125 @@ export function ContentRenderer({ event }: { event: EventRow }) {
   if (role === "assistant" || kind.includes("assistant"))
     return <MarkdownContent content={content} />;
   return <PlainContent content={content} />;
+}
+
+// ── Token usage ─────────────────────────────────────────
+
+export function TokenUsageSection({ event }: { event: EventRow }) {
+  const usage = readEventUsage(event);
+  if (!usage) return null;
+
+  return (
+    <section className="rounded-md border border-border bg-card overflow-hidden">
+      <div className="px-3.5 py-2 border-b border-border">
+        <div className="text-xs font-semibold text-card-foreground">
+          Token Usage
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 p-3.5 sm:grid-cols-2">
+        <TokenUsageCard label="Last Call" usage={usage.last_token_usage} />
+        <TokenUsageCard label="Session Total" usage={usage.total_token_usage} />
+      </div>
+    </section>
+  );
+}
+
+function TokenUsageCard({ label, usage }: { label: string; usage: TokenUsage }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/40 p-3">
+      <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
+        {label}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        {tokenUsageRows(usage).map((row) => (
+          <div key={row.label} className="contents">
+            <dt className="text-muted-foreground">{row.label}</dt>
+            <dd className="text-right font-semibold text-card-foreground tabular-nums">
+              {formatTokenValue(row.value)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function tokenUsageRows(usage: TokenUsage): Array<{ label: string; value: number }> {
+  return [
+    { label: "Input", value: usage.input_tokens },
+    { label: "Output", value: usage.output_tokens },
+    { label: "Reasoning", value: usage.reasoning_output_tokens },
+    { label: "Cached", value: usage.cached_input_tokens },
+    { label: "Total", value: usage.total_tokens },
+  ];
+}
+
+function readEventUsage(event: EventRow): { last_token_usage: TokenUsage; total_token_usage: TokenUsage } | null {
+  if (!isAiReplyEvent(event)) return null;
+  const meta = parseRecord(event.metadata);
+  const usage = parseRecord(meta.usage);
+  const totalUsage = readTokenUsage(usage.total_token_usage) ?? readTokenUsage(usage);
+  if (!totalUsage) return null;
+  const lastUsage = readTokenUsage(usage.last_token_usage) ?? emptyTokenUsage();
+  return { last_token_usage: lastUsage, total_token_usage: totalUsage };
+}
+
+function isAiReplyEvent(event: EventRow): boolean {
+  return event.role === "assistant"
+    || event.kind === "assistant_output"
+    || event.kind === "assistant_update";
+}
+
+function readTokenUsage(value: unknown): TokenUsage | null {
+  const data = parseRecord(value);
+  const input = numberOrNull(data.input_tokens);
+  const output = numberOrNull(data.output_tokens);
+  const reasoning = numberOrNull(data.reasoning_output_tokens ?? data.reasoning_tokens);
+  const cached = numberOrNull(data.cached_input_tokens);
+  const total = numberOrNull(data.total_tokens);
+  if (input === null && output === null && reasoning === null && cached === null && total === null) {
+    return null;
+  }
+  return {
+    input_tokens: input ?? 0,
+    output_tokens: output ?? 0,
+    reasoning_output_tokens: reasoning ?? 0,
+    cached_input_tokens: cached ?? 0,
+    total_tokens: total ?? (input ?? 0) + (output ?? 0),
+  };
+}
+
+function parseRecord(value: unknown): Record<string, unknown> {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function emptyTokenUsage(): TokenUsage {
+  return {
+    input_tokens: 0,
+    output_tokens: 0,
+    reasoning_output_tokens: 0,
+    cached_input_tokens: 0,
+    total_tokens: 0,
+  };
+}
+
+function formatTokenValue(value: number): string {
+  return value.toLocaleString("en-US");
 }
 
 function PlainContent({ content }: { content: string }) {
@@ -305,7 +420,8 @@ export function MergedToolCallContent({
             Input
           </span>
         </div>
-        <div className="p-3.5">
+        <div className="p-3.5 space-y-3">
+          <MetaCardsGrid event={callEvent} />
           <pre className="text-xs text-card-foreground whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto font-mono leading-relaxed">
             {(() => {
               if (callEvent.metadata) {
@@ -354,7 +470,8 @@ export function MergedToolCallContent({
                 Output
               </span>
             </div>
-            <div className="p-3.5">
+            <div className="p-3.5 space-y-3">
+              <MetaCardsGrid event={outputEvent} />
               <ContentRenderer event={outputEvent} />
             </div>
           </div>

@@ -28,6 +28,11 @@ export interface SessionMetrics {
   total_reasoning_output_tokens: number;
   total_cached_input_tokens: number;
   total_tokens: number;
+  last_input_tokens: number;
+  last_output_tokens: number;
+  last_reasoning_output_tokens: number;
+  last_cached_input_tokens: number;
+  last_total_tokens: number;
   node_count: number;
   display_node_count: number;
   session_count: number;
@@ -103,7 +108,7 @@ export interface EventRow {
   role: string | null;
   phase: string | null;
   content: string | null;
-  metadata: string | null;
+  metadata: string | Record<string, unknown> | null;
   source_line_no: number | null;
 }
 
@@ -146,8 +151,18 @@ export interface UsageBadge {
   reasoning_output_tokens: number;
   cached_input_tokens: number;
   total_tokens: number;
+  last_token_usage: TokenUsage;
+  total_token_usage: TokenUsage;
   label: string;
   note: string;
+}
+
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+  cached_input_tokens: number;
+  total_tokens: number;
 }
 
 // ── IPC params ──────────────────────────────────────────

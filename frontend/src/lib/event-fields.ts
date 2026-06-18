@@ -337,15 +337,15 @@ export function extractFields(
       const content = stringOrNull(meta.content);
       const toolName = stringOrNull(meta.tool_name);
       const name = stringOrNull(meta.name);
+      const recordType = stringOrNull(meta.record_type);
+      const payloadType = stringOrNull(meta.payload_type) ?? stringOrNull(meta.event_type);
 
-      if (kind) fields.push({ key: "kind", label: "Type", value: kind });
+      if (recordType) fields.push({ key: "record_type", label: "Type", value: recordType });
+      if (payloadType) fields.push({ key: "payload_type", label: "Payload Type", value: payloadType });
       if (title) fields.push({ key: "title", label: "Title", value: truncate(title, 80) });
       if (toolName || name) fields.push({ key: "tool", label: "Tool", value: (toolName || name)! });
       if (summary) fields.push({ key: "summary", label: "Summary", value: truncate(summary, 120) });
       if (content && !summary) fields.push({ key: "content", label: "Content", value: truncate(content, 120) });
-      if (fields.length === 0 && kind) {
-        fields.push({ key: "kind", label: "Type", value: kind });
-      }
       break;
     }
   }

@@ -22,7 +22,9 @@ function getEventFields(event: EventRow): EventField[] {
 
   if (event.metadata) {
     try {
-      const parsed = JSON.parse(event.metadata);
+      const parsed = typeof event.metadata === "string"
+        ? JSON.parse(event.metadata)
+        : event.metadata;
       Object.assign(meta, parsed);
     } catch { /* ignore parse errors */ }
   }

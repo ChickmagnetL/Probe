@@ -76,6 +76,11 @@ export function calculateOwnMetrics(session: SessionBuild): JSONDict {
     total_reasoning_output_tokens: 0,
     total_cached_input_tokens: 0,
     total_tokens: 0,
+    last_input_tokens: 0,
+    last_output_tokens: 0,
+    last_reasoning_output_tokens: 0,
+    last_cached_input_tokens: 0,
+    last_total_tokens: 0,
     node_count: session.events.length,
     display_node_count: session.events.length,
     session_count: session.is_synthetic ? 0 : 1,
@@ -97,6 +102,15 @@ export function calculateOwnMetrics(session: SessionBuild): JSONDict {
     metrics.total_cached_input_tokens = asInt(latestTelemetry.total_cached_input_tokens);
     const totalTokens = asInt(latestTelemetry.total_tokens);
     metrics.total_tokens = totalTokens || (inputTokens + outputTokens);
+    metrics.last_input_tokens = asInt(latestTelemetry.last_input_tokens);
+    metrics.last_output_tokens = asInt(latestTelemetry.last_output_tokens);
+    metrics.last_reasoning_output_tokens = asInt(
+      latestTelemetry.last_reasoning_output_tokens ?? latestTelemetry.last_reasoning_tokens,
+    );
+    metrics.last_cached_input_tokens = asInt(latestTelemetry.last_cached_input_tokens);
+    const lastTotalTokens = asInt(latestTelemetry.last_total_tokens);
+    metrics.last_total_tokens = lastTotalTokens
+      || (asInt(latestTelemetry.last_input_tokens) + asInt(latestTelemetry.last_output_tokens));
   }
   return metrics;
 }
@@ -163,11 +177,17 @@ export function sessionPayload(
   };
 }
 
-export function serializeImportedSession(session: SessionBuild): JSONDict {
+export function serializeImportedSession(
+  session: SessionBuild,
+  sessions?: Map<string, SessionBuild>,
+): JSONDict {
   const ownMetrics = calculateOwnMetrics(session);
   const ownEvents = buildSessionEvents(session, ownMetrics);
   // R1.3: Expand input_image content_parts from user_input into independent events
   expandInputImageEvents(session.session_id, ownEvents);
+  if (sessions && session.child_ids.size > 0) {
+    injectSubagentEventsFlat(session, ownEvents, sessions);
+  }
   const gTurns = buildGraphTurns(ownEvents);
   attachSessionInputPreamble(session, gTurns);
   return sessionPayload(session, ownEvents, ownEvents, gTurns, ownMetrics, ownMetrics, []);
@@ -306,6 +326,50 @@ function injectSubagentSessionsIntoEvents(
   });
 }
 
+function injectSubagentEventsFlat(
+  parentSession: SessionBuild,
+  ownEvents: JSONDict[],
+  sessions: Map<string, SessionBuild>,
+): void {
+  for (const childId of parentSession.child_ids) {
+    const child = sessions.get(childId);
+    if (!child) continue;
+    const branchMeta = parentSession.branch_meta[childId] ?? {};
+    const childMetrics = calculateOwnMetrics(child);
+    const summaryBits = [
+      child.agent_role ?? "子代理",
+      childMetrics.display_node_count ? `${childMetrics.display_node_count} 个节点` : null,
+      childMetrics.total_tokens ? `${childMetrics.total_tokens} tokens` : null,
+      stringOrNull(branchMeta.status_preview),
+    ].filter((value): value is string => Boolean(value));
+    ownEvents.push({
+      event_id: `subagent:${childId}`,
+      session_id: parentSession.session_id,
+      timestamp: stringOrNull(branchMeta.timestamp) ?? stringOrNull(childMetrics.start_time),
+      kind: "subagent_session",
+      record_type: "event_msg",
+      payload_type: stringOrNull(branchMeta.payload_type) ?? "collab_agent_spawn_end",
+      role: null,
+      phase: null,
+      title: `子代理分支 · ${child.agent_nickname ?? childId.slice(0, 8)}`,
+      summary: summaryBits.join(" · "),
+      detail_note: "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",
+      prompt_preview: stringOrNull(branchMeta.prompt_preview),
+      child_session_id: childId,
+      status: stringOrNull(branchMeta.status_preview),
+      raw_record_id: null,
+      source_path: child.source_path,
+      source_line_no: null,
+      raw_text: child.source_raw_text,
+    });
+  }
+  ownEvents.sort((a, b) => {
+    const ka = eventSortKey(a as unknown as Record<string, unknown>);
+    const kb = eventSortKey(b as unknown as Record<string, unknown>);
+    return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2] || ka[3].localeCompare(kb[3]);
+  });
+}
+
 // ── R1.3: Expand input_image content_parts from user_input into events ──
 
 function expandInputImageEvents(
@@ -342,6 +406,8 @@ function expandInputImageEvents(
         session_id: sessionId,
         timestamp: event.timestamp,
         kind: "input_image",
+        record_type: "response_item",
+        payload_type: "message",
         role: null,
         phase: null,
         title: "附加输入 · 图片",

@@ -49,6 +49,8 @@ export function buildTimeline(
       timestamp: stringOrNull(branchMeta.timestamp)
         ?? stringOrNull(childSession.start_time)
         ?? stringOrNull((childSession.metrics as JSONDict)?.start_time),
+      record_type: "event_msg",
+      payload_type: stringOrNull(branchMeta.payload_type) ?? "collab_agent_spawn_end",
       title,
       summary: subagentSummary(childSession, branchMeta),
       detail_note: "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",
@@ -106,6 +108,8 @@ export function buildSessionPreambleDetails(session: SessionBuildRef): JSONDict[
     session_id: session.session_id,
     timestamp: session.start_time,
     kind: "system_prompt",
+    record_type: "session_meta",
+    payload_type: null,
     title: "系统内置规则",
     summary: "Codex 默认系统规则（base_instructions）",
     content,
@@ -204,6 +208,8 @@ function buildInputPartDetails(anchor: JSONDict): JSONDict[] {
       session_id: anchor.session_id,
       timestamp: anchor.timestamp,
       kind: detailKind,
+      record_type: "response_item",
+      payload_type: "message",
       title: descriptor.title,
       summary: descriptor.summary || truncate(content, 120),
       content,
@@ -257,14 +263,21 @@ function subagentSummary(childSession: JSONDict, branchMeta: JSONDict): string {
 }
 
 function attachUsageBadge(events: JSONDict[], ownMetrics: JSONDict): void {
-  const usage = {
+  const totalUsage = {
     input_tokens: asInt(ownMetrics.total_input_tokens),
     output_tokens: asInt(ownMetrics.total_output_tokens),
     reasoning_output_tokens: asInt(ownMetrics.total_reasoning_output_tokens),
     cached_input_tokens: asInt(ownMetrics.total_cached_input_tokens),
     total_tokens: asInt(ownMetrics.total_tokens),
   };
-  if (!usage.input_tokens && !usage.output_tokens) return;
+  const lastUsage = {
+    input_tokens: asInt(ownMetrics.last_input_tokens),
+    output_tokens: asInt(ownMetrics.last_output_tokens),
+    reasoning_output_tokens: asInt(ownMetrics.last_reasoning_output_tokens),
+    cached_input_tokens: asInt(ownMetrics.last_cached_input_tokens),
+    total_tokens: asInt(ownMetrics.last_total_tokens),
+  };
+  if (!totalUsage.input_tokens && !totalUsage.output_tokens) return;
 
   const assistantCandidates = events.filter((e) => {
     const k = stringOrNull(e.kind);
@@ -281,11 +294,13 @@ function attachUsageBadge(events: JSONDict[], ownMetrics: JSONDict): void {
   }
 
   target.usage = {
-    ...usage,
-    label: usage.input_tokens || usage.output_tokens
-      ? `${usage.input_tokens} 输入 / ${usage.output_tokens} 输出`
-      : `${usage.total_tokens} 总计`,
-    note: "这组 usage 来自 `event_msg.token_count`。它现在只作为整段会话的消耗统计，不再作为独立工作节点串进链路里。",
+    ...totalUsage,
+    last_token_usage: lastUsage,
+    total_token_usage: totalUsage,
+    label: totalUsage.input_tokens || totalUsage.output_tokens
+      ? `${totalUsage.input_tokens} 输入 / ${totalUsage.output_tokens} 输出`
+      : `${totalUsage.total_tokens} 总计`,
+    note: "这组 usage 来自 `event_msg.token_count`。Last Call 是 last_token_usage，Session Total 是 total_token_usage；它们只作为 AI 回复详情统计，不作为独立工作节点串进链路里。",
   };
   const taskElapsed = ownMetrics.task_elapsed_sec;
   if (typeof taskElapsed === "number") {

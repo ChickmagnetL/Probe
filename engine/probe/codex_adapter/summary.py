@@ -236,6 +236,7 @@ def _collect_collaboration_metadata(
                         "status": status_row.get("status"),
                         "receiver_agent_nickname": status_row.get("agent_nickname"),
                         "receiver_agent_role": status_row.get("agent_role"),
+                        "event_type": row.get("event_type"),
                     },
                 )
 
@@ -251,6 +252,7 @@ def _collect_collaboration_metadata(
                     {
                         "timestamp": row.get("timestamp"),
                         "status": status,
+                        "event_type": row.get("event_type"),
                     },
                 )
 
@@ -291,6 +293,10 @@ def _register_child_link(
     status_preview = _flatten_status(row.get("status"))
     if status_preview:
         branch_meta["status_preview"] = status_preview
+
+    payload_type = _string(row.get("event_type")) or _string(row.get("payload_type"))
+    if payload_type and not _string(branch_meta.get("payload_type")):
+        branch_meta["payload_type"] = payload_type
 
 
 def _collect_events(
@@ -525,6 +531,9 @@ def _build_timeline(
                 "timestamp": branch_meta.get("timestamp")
                 or child_session.get("start_time")
                 or child_session["metrics"].get("start_time"),
+                "record_type": "event_msg",
+                "payload_type": branch_meta.get("payload_type")
+                or "collab_agent_spawn_end",
                 "title": title,
                 "summary": _subagent_summary(child_session, branch_meta),
                 "detail_note": "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",
@@ -999,6 +1008,8 @@ def _build_session_preamble_details(session: SessionBuild) -> list[dict[str, Any
             "session_id": session.session_id,
             "timestamp": session.start_time,
             "kind": "system_prompt",
+            "record_type": "session_meta",
+            "payload_type": None,
             "title": "系统内置规则",
             "summary": "Codex 默认系统规则（base_instructions）",
             "content": content,
@@ -1041,6 +1052,11 @@ def _calculate_own_metrics(session: SessionBuild) -> dict[str, Any]:
         "total_reasoning_output_tokens": 0,
         "total_cached_input_tokens": 0,
         "total_tokens": 0,
+        "last_input_tokens": 0,
+        "last_output_tokens": 0,
+        "last_reasoning_output_tokens": 0,
+        "last_cached_input_tokens": 0,
+        "last_total_tokens": 0,
         "node_count": len(session.events),
         "display_node_count": len(session.events),
         "session_count": 0 if session.is_synthetic else 1,
@@ -1066,6 +1082,20 @@ def _calculate_own_metrics(session: SessionBuild) -> dict[str, Any]:
     if not metrics["total_tokens"]:
         metrics["total_tokens"] = (
             metrics["total_input_tokens"] + metrics["total_output_tokens"]
+        )
+    metrics["last_input_tokens"] = _as_int(latest_telemetry.get("last_input_tokens"))
+    metrics["last_output_tokens"] = _as_int(latest_telemetry.get("last_output_tokens"))
+    metrics["last_reasoning_output_tokens"] = _as_int(
+        latest_telemetry.get("last_reasoning_output_tokens")
+        or latest_telemetry.get("last_reasoning_tokens")
+    )
+    metrics["last_cached_input_tokens"] = _as_int(
+        latest_telemetry.get("last_cached_input_tokens")
+    )
+    metrics["last_total_tokens"] = _as_int(latest_telemetry.get("last_total_tokens"))
+    if not metrics["last_total_tokens"]:
+        metrics["last_total_tokens"] = (
+            metrics["last_input_tokens"] + metrics["last_output_tokens"]
         )
     return metrics
 
@@ -1129,6 +1159,8 @@ def _build_message_event(row: dict[str, Any], session_id: str) -> dict[str, Any]
         "session_id": session_id,
         "timestamp": row.get("timestamp"),
         "kind": kind,
+        "record_type": _string(row.get("record_type")) or "response_item",
+        "payload_type": _string(row.get("payload_type")) or "message",
         "role": role,
         "phase": phase,
         "title": title,
@@ -1156,6 +1188,10 @@ def _build_tool_call_event(row: dict[str, Any], session_id: str) -> dict[str, An
         "session_id": session_id,
         "timestamp": row.get("timestamp"),
         "kind": "tool_call",
+        "record_type": _string(row.get("record_type")) or "response_item",
+        "payload_type": _string(row.get("payload_type")),
+        "name": _string(row.get("tool_name")),
+        "call_id": _string(row.get("call_id")),
         "title": f"工具调用 · {tool_name}",
         "summary": _truncate(args or "已记录调用参数", 96),
         "args": args,
@@ -1175,6 +1211,9 @@ def _build_tool_output_event(row: dict[str, Any], session_id: str) -> dict[str, 
         "session_id": session_id,
         "timestamp": row.get("timestamp"),
         "kind": "tool_output",
+        "record_type": _string(row.get("record_type")) or "response_item",
+        "payload_type": _string(row.get("payload_type")),
+        "call_id": _string(row.get("call_id")),
         "title": "工具输出",
         "summary": _truncate(output or status or "工具已返回输出", 96),
         "content": output,
@@ -1205,6 +1244,8 @@ def _build_turn_aborted_event(
         "session_id": session_id,
         "timestamp": row.get("timestamp"),
         "kind": "turn_aborted",
+        "record_type": _string(row.get("record_type")) or "event_msg",
+        "payload_type": _string(row.get("payload_type")) or "turn_aborted",
         "role": None,
         "phase": None,
         "title": f"回合中止 · {reason_label}",
@@ -1233,6 +1274,8 @@ def _build_parser_event(
         "session_id": session_id,
         "timestamp": row.get("timestamp"),
         "kind": kind,
+        "record_type": _string(row.get("record_type")) or "event_msg",
+        "payload_type": _string(row.get("payload_type")),
         "role": None,
         "phase": None,
         "title": _event_title(event_type),
@@ -1240,6 +1283,27 @@ def _build_parser_event(
         "content": content,
         "content_label": "事件详情",
         "detail_note": _string(row.get("status")) or _string(row.get("error_type")),
+        "name": _string(row.get("name")) or _string(row.get("tool_name")),
+        "call_id": _string(row.get("call_id")),
+        "command": (
+            row.get("command")
+            if isinstance(row.get("command"), str)
+            else " ".join(str(item) for item in row.get("command"))
+            if isinstance(row.get("command"), list)
+            else _string(row.get("command_text"))
+        ),
+        "status": _string(row.get("status")),
+        "invocation": row.get("invocation") if isinstance(row.get("invocation"), dict) else None,
+        "server": _string(row.get("server")),
+        "tool_name": _string(row.get("tool_name")),
+        "path": _string(row.get("path")),
+        "risk_level": _string(row.get("risk_level")),
+        "error_type": _string(row.get("error_type")),
+        "duration_ms": row.get("duration_ms") if isinstance(row.get("duration_ms"), (int, float)) else None,
+        "collaboration_mode_kind": _string(row.get("collaboration_mode_kind")),
+        "reason": _string(row.get("reason")),
+        "receiver_agent_nickname": _string(row.get("receiver_agent_nickname")),
+        "query": _string(row.get("query")),
         "raw_record_id": row.get("raw_record_id"),
         "source_path": row.get("source_path"),
         "source_line_no": row.get("source_line_no"),
@@ -1350,6 +1414,13 @@ def _build_telemetry_snapshot(row: dict[str, Any]) -> dict[str, Any]:
         ),
         "total_cached_input_tokens": _as_int(row.get("total_cached_input_tokens")),
         "total_tokens": _as_int(row.get("total_tokens")),
+        "last_input_tokens": _as_int(row.get("last_input_tokens")),
+        "last_output_tokens": _as_int(row.get("last_output_tokens")),
+        "last_reasoning_output_tokens": _as_int(
+            row.get("last_reasoning_output_tokens") or row.get("last_reasoning_tokens")
+        ),
+        "last_cached_input_tokens": _as_int(row.get("last_cached_input_tokens")),
+        "last_total_tokens": _as_int(row.get("last_total_tokens")),
     }
 
 
@@ -1357,7 +1428,7 @@ def _attach_usage_badge(
     events: list[dict[str, Any]],
     own_metrics: dict[str, Any],
 ) -> None:
-    usage = {
+    total_usage = {
         "input_tokens": _as_int(own_metrics.get("total_input_tokens")),
         "output_tokens": _as_int(own_metrics.get("total_output_tokens")),
         "reasoning_output_tokens": _as_int(
@@ -1366,7 +1437,16 @@ def _attach_usage_badge(
         "cached_input_tokens": _as_int(own_metrics.get("total_cached_input_tokens")),
         "total_tokens": _as_int(own_metrics.get("total_tokens")),
     }
-    if not usage["input_tokens"] and not usage["output_tokens"]:
+    last_usage = {
+        "input_tokens": _as_int(own_metrics.get("last_input_tokens")),
+        "output_tokens": _as_int(own_metrics.get("last_output_tokens")),
+        "reasoning_output_tokens": _as_int(
+            own_metrics.get("last_reasoning_output_tokens")
+        ),
+        "cached_input_tokens": _as_int(own_metrics.get("last_cached_input_tokens")),
+        "total_tokens": _as_int(own_metrics.get("last_total_tokens")),
+    }
+    if not total_usage["input_tokens"] and not total_usage["output_tokens"]:
         return
 
     assistant_candidates = [
@@ -1386,15 +1466,18 @@ def _attach_usage_badge(
         assistant_candidates[-1],
     )
     target_event["usage"] = {
-        **usage,
+        **total_usage,
+        "last_token_usage": last_usage,
+        "total_token_usage": total_usage,
         "label": (
-            f"{usage['input_tokens']} 输入 / {usage['output_tokens']} 输出"
-            if usage["input_tokens"] or usage["output_tokens"]
-            else f"{usage['total_tokens']} 总计"
+            f"{total_usage['input_tokens']} 输入 / {total_usage['output_tokens']} 输出"
+            if total_usage["input_tokens"] or total_usage["output_tokens"]
+            else f"{total_usage['total_tokens']} 总计"
         ),
         "note": (
-            "这组 usage 来自 `event_msg.token_count`。它现在只作为整段会话的消耗统计，"
-            "不再作为独立工作节点串进链路里。"
+            "这组 usage 来自 `event_msg.token_count`。Last Call 是 last_token_usage，"
+            "Session Total 是 total_token_usage；它们只作为 AI 回复详情统计，"
+            "不作为独立工作节点串进链路里。"
         ),
     }
     task_elapsed_sec = own_metrics.get("task_elapsed_sec")
@@ -1529,6 +1612,8 @@ def _expand_input_image_events(
                     "session_id": session_id,
                     "timestamp": event.get("timestamp"),
                     "kind": "input_image",
+                    "record_type": "response_item",
+                    "payload_type": "message",
                     "role": None,
                     "phase": None,
                     "title": INPUT_DETAIL_TITLE.get("input_image", "附加输入 · 图片"),
@@ -1583,6 +1668,9 @@ def _inject_subagent_events_flat(
                 "session_id": parent_session.session_id,
                 "timestamp": branch_meta.get("timestamp")
                 or child_metrics.get("start_time"),
+                "record_type": "event_msg",
+                "payload_type": branch_meta.get("payload_type")
+                or "collab_agent_spawn_end",
                 "title": title,
                 "summary": summary,
                 "detail_note": "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",

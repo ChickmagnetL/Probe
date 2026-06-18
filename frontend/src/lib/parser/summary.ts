@@ -1,5 +1,5 @@
 import type { JSONDict, ExtractionBuffers } from "./models";
-import { stringOrNull } from "./summary-helpers";
+import { stringOrNull, sortKeyFromTimestamp } from "./summary-helpers";
 import {
   type SessionBuild,
   createSession,
@@ -75,6 +75,105 @@ function seedSessions(
     session.start_time = stringOrNull(row.conversation_started_at)
       ?? stringOrNull(row.timestamp);
   }
+}
+
+function collectCollaborationMetadata(
+  buffers: ExtractionBuffers,
+  sessions: Map<string, SessionBuild>,
+): void {
+  for (const row of buffers.collaboration_events) {
+    const senderSessionId = stringOrNull(row.sender_thread_id);
+    if (!senderSessionId) continue;
+
+    const childSessionId = stringOrNull(row.new_thread_id)
+      ?? stringOrNull(row.receiver_thread_id);
+    if (childSessionId) {
+      registerChildLink(sessions, senderSessionId, childSessionId, row);
+    }
+
+    const agentStatuses = Array.isArray(row.agent_statuses) ? row.agent_statuses : [];
+    for (const statusRow of agentStatuses) {
+      if (typeof statusRow !== "object" || statusRow === null) continue;
+      const threadId = stringOrNull((statusRow as JSONDict).thread_id);
+      if (!threadId) continue;
+      registerChildLink(sessions, senderSessionId, threadId, {
+        timestamp: row.timestamp,
+        status: (statusRow as JSONDict).status,
+        receiver_agent_nickname: (statusRow as JSONDict).agent_nickname,
+        receiver_agent_role: (statusRow as JSONDict).agent_role,
+        event_type: row.event_type,
+      });
+    }
+
+    const statuses = row.statuses;
+    if (typeof statuses === "object" && statuses !== null && !Array.isArray(statuses)) {
+      for (const [threadId, status] of Object.entries(statuses as JSONDict)) {
+        if (!threadId) continue;
+        registerChildLink(sessions, senderSessionId, threadId, {
+          timestamp: row.timestamp,
+          status,
+          event_type: row.event_type,
+        });
+      }
+    }
+  }
+}
+
+function registerChildLink(
+  sessions: Map<string, SessionBuild>,
+  parentSessionId: string,
+  childSessionId: string,
+  row: JSONDict,
+): void {
+  const parent = ensureSession(sessions, parentSessionId);
+  const child = ensureSession(sessions, childSessionId);
+  parent.child_ids.add(childSessionId);
+  if (!child.parent_session_id) child.parent_session_id = parentSessionId;
+  child.is_subagent = true;
+  child.agent_nickname = child.agent_nickname
+    ?? stringOrNull(row.new_agent_nickname)
+    ?? stringOrNull(row.receiver_agent_nickname);
+  child.agent_role = child.agent_role
+    ?? stringOrNull(row.new_agent_role)
+    ?? stringOrNull(row.receiver_agent_role);
+
+  const branchMeta = parent.branch_meta[childSessionId] ?? {};
+  const timestamp = stringOrNull(row.timestamp);
+  if (
+    timestamp
+    && (
+      !stringOrNull(branchMeta.timestamp)
+      || sortKeyFromTimestamp(timestamp) < sortKeyFromTimestamp(stringOrNull(branchMeta.timestamp))
+    )
+  ) {
+    branchMeta.timestamp = timestamp;
+  }
+
+  const prompt = stringOrNull(row.prompt);
+  if (prompt) branchMeta.prompt_preview = truncate(prompt, 180);
+
+  const statusPreview = flattenStatus(row.status);
+  if (statusPreview) branchMeta.status_preview = statusPreview;
+
+  const payloadType = stringOrNull(row.event_type) ?? stringOrNull(row.payload_type);
+  if (payloadType && !stringOrNull(branchMeta.payload_type)) {
+    branchMeta.payload_type = payloadType;
+  }
+
+  parent.branch_meta[childSessionId] = branchMeta;
+}
+
+function flattenStatus(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "object" && value !== null) {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function sessionForRow(
@@ -223,6 +322,8 @@ function buildMessageEvent(row: JSONDict, session_id: string): JSONDict {
     session_id,
     timestamp: row.timestamp,
     kind,
+    record_type: stringOrNull(row.record_type) ?? "response_item",
+    payload_type: stringOrNull(row.payload_type) ?? "message",
     role,
     phase,
     title,
@@ -246,6 +347,10 @@ function buildToolCallEvent(row: JSONDict, session_id: string): JSONDict {
     session_id,
     timestamp: row.timestamp,
     kind: "tool_call",
+    record_type: stringOrNull(row.record_type) ?? "response_item",
+    payload_type: stringOrNull(row.payload_type),
+    name: stringOrNull(row.tool_name),
+    call_id: stringOrNull(row.call_id),
     title: `工具调用 · ${toolName}`,
     summary: truncate(args ?? "已记录调用参数", 96),
     args,
@@ -265,6 +370,9 @@ function buildToolOutputEvent(row: JSONDict, session_id: string): JSONDict {
     session_id,
     timestamp: row.timestamp,
     kind: "tool_output",
+    record_type: stringOrNull(row.record_type) ?? "response_item",
+    payload_type: stringOrNull(row.payload_type),
+    call_id: stringOrNull(row.call_id),
     title: "工具输出",
     summary: truncate(output ?? status ?? "工具已返回输出", 96),
     content: output,
@@ -295,6 +403,8 @@ function buildTurnAbortedEvent(row: JSONDict, session_id: string): JSONDict {
     session_id,
     timestamp: row.timestamp,
     kind: "turn_aborted",
+    record_type: stringOrNull(row.record_type) ?? "event_msg",
+    payload_type: stringOrNull(row.payload_type) ?? "turn_aborted",
     role: null,
     phase: null,
     title: `回合中止 · ${reasonLabel}`,
@@ -323,6 +433,11 @@ function buildTelemetrySnapshot(row: JSONDict): JSONDict {
     total_reasoning_output_tokens: asInt(row.total_reasoning_output_tokens ?? row.total_reasoning_tokens),
     total_cached_input_tokens: asInt(row.total_cached_input_tokens),
     total_tokens: asInt(row.total_tokens),
+    last_input_tokens: asInt(row.last_input_tokens),
+    last_output_tokens: asInt(row.last_output_tokens),
+    last_reasoning_output_tokens: asInt(row.last_reasoning_output_tokens ?? row.last_reasoning_tokens),
+    last_cached_input_tokens: asInt(row.last_cached_input_tokens),
+    last_total_tokens: asInt(row.last_total_tokens),
   };
 }
 
@@ -335,6 +450,8 @@ function buildParserEvent(row: JSONDict, session_id: string, kind: string): JSON
     session_id,
     timestamp: row.timestamp,
     kind,
+    record_type: stringOrNull(row.record_type) ?? "event_msg",
+    payload_type: stringOrNull(row.payload_type),
     role: null,
     phase: null,
     title,
@@ -342,6 +459,25 @@ function buildParserEvent(row: JSONDict, session_id: string, kind: string): JSON
     content,
     content_label: "事件详情",
     detail_note: stringOrNull(row.status) ?? stringOrNull(row.error_type),
+    name: stringOrNull(row.name) ?? stringOrNull(row.tool_name),
+    call_id: stringOrNull(row.call_id),
+    command: typeof row.command === "string"
+      ? row.command
+      : Array.isArray(row.command)
+        ? row.command.map(String).join(" ")
+        : stringOrNull(row.command_text),
+    status: stringOrNull(row.status),
+    invocation: typeof row.invocation === "object" && row.invocation !== null ? row.invocation : null,
+    server: stringOrNull(row.server),
+    tool_name: stringOrNull(row.tool_name),
+    path: stringOrNull(row.path),
+    risk_level: stringOrNull(row.risk_level),
+    error_type: stringOrNull(row.error_type),
+    duration_ms: typeof row.duration_ms === "number" ? row.duration_ms : null,
+    collaboration_mode_kind: stringOrNull(row.collaboration_mode_kind),
+    reason: stringOrNull(row.reason),
+    receiver_agent_nickname: stringOrNull(row.receiver_agent_nickname),
+    query: stringOrNull(row.query),
     raw_record_id: row.raw_record_id,
     source_path: row.source_path,
     source_line_no: row.source_line_no,
@@ -445,11 +581,12 @@ function objectKeyCount(value: unknown): number {
 export function buildSummary(buffers: ExtractionBuffers): JSONDict {
   const sessions = new Map<string, SessionBuild>();
   seedSessions(buffers, sessions);
+  collectCollaborationMetadata(buffers, sessions);
   collectEvents(buffers, sessions);
   ensureSyntheticRoots(sessions);
 
   const flatSessions = sortedImportedSessionIds(sessions)
-    .map((id) => serializeImportedSession(sessions.get(id)!));
+    .map((id) => serializeImportedSession(sessions.get(id)!, sessions));
   const rootSessions = sortedRootSessionIds(sessions)
     .map((id) => serializeTree(id, sessions));
 

@@ -81,27 +81,10 @@ def _to_session_row(s: dict[str, Any]) -> dict[str, Any]:
 
 
 def _to_event_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows = []
-    for e in events:
-        rows.append({
-            "event_id": e.get("event_id"),
-            "session_id": e.get("session_id"),
-            "kind": e.get("kind"),
-            "timestamp": e.get("timestamp"),
-            "role": e.get("role"),
-            "phase": e.get("phase"),
-            "content": e.get("content") or e.get("summary"),
-            "source_line_no": e.get("source_line_no"),
-            "content_parts": e.get("content_parts"),
-            "title": e.get("title"),
-            "summary": e.get("summary"),
-            "args": e.get("args"),
-            "raw_text": e.get("raw_text"),
-            "event_type": e.get("event_type"),
-            "detail_note": e.get("detail_note"),
-            "extracted_fields": e.get("extracted_fields"),
-            "extra_fields": e.get("extra_fields"),
-            "child_session_id": e.get("child_session_id"),
-            "prompt_preview": e.get("prompt_preview"),
-        })
+    rows: list[dict[str, Any]] = []
+    for event in events:
+        row = dict(event)
+        row["content"] = event.get("content") or event.get("summary")
+        row["source_line_no"] = event.get("source_line_no")
+        rows.append(row)
     return rows
