@@ -1,5 +1,5 @@
 import { kindColor } from "../../lib/color";
-import { detailLabel, kindLabel, extractToolName } from "./graph-labels";
+import { kindLabel } from "./graph-labels";
 
 // ── Interfaces ──────────────────────────────────────────
 
@@ -301,10 +301,11 @@ function layoutTurn(
       // Subagent marker node
       const multiSub = totalSubagentsForNodes >= 2;
       const tint = multiSub ? subagentTintAt(subagentIdx) : "#475569";
+      const metadata = tooltipMetadataForEvent(ev);
       const markerNode: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
-        label: detailLabel(ev.kind, ev.summary, ev.title),
+        label: graphDetailNodeLabel(ev),
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
@@ -316,7 +317,7 @@ function layoutTurn(
         isInput: false,
         sessionId: ev.child_session_id,
         spindleRole: "subagent",
-        metadata: tooltipMetadataForEvent(ev),
+        metadata,
         // Only set subagentTint for multi-agent (PRD R6: single agent has no tint circle)
         ...(multiSub ? { subagentTint: tint } : {}),
       };
@@ -324,6 +325,7 @@ function layoutTurn(
       subagentIdx++;
     } else if (pos.isAnchor) {
       // Anchor node (user_input or assistant_output)
+      const metadata = tooltipMetadataForEvent(ev);
       const node: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
@@ -339,15 +341,16 @@ function layoutTurn(
         isInput: pos.isInput,
         spindleRole: "anchor",
         sessionId,
-        metadata: tooltipMetadataForEvent(ev),
+        metadata,
       };
       nodes.push(node);
     } else {
       // Intermediate node (tool_call, tool_output, reasoning, etc.)
+      const metadata = tooltipMetadataForEvent(ev);
       const node: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
-        label: detailLabel(ev.kind, ev.summary, ev.title),
+        label: graphDetailNodeLabel(ev),
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
@@ -359,7 +362,7 @@ function layoutTurn(
         isInput: false,
         spindleRole: "intermediate",
         sessionId,
-        metadata: tooltipMetadataForEvent(ev),
+        metadata,
       };
       nodes.push(node);
     }
@@ -553,17 +556,54 @@ function omitTooltipDisplayFields(record: Record<string, unknown>): Record<strin
   return next;
 }
 
+function recordFromMetadata(value: unknown): Record<string, unknown> | null {
+  if (isRecord(value)) return value;
+  if (typeof value === "string") return parseJsonObject(value);
+  return null;
+}
+
+function sourceRecordForEvent(
+  ev: TurnEvent,
+  raw: Record<string, unknown> | null,
+  rawMeta: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  return recordFromMetadata(ev.source_record)
+    ?? recordFromMetadata(rawMeta?.source_record)
+    ?? recordFromMetadata(raw?.source_record);
+}
+
+function originalEventTypeForEvent(
+  ev: TurnEvent,
+  raw: Record<string, unknown> | null,
+  rawMeta: Record<string, unknown> | null,
+  sourceRecord: Record<string, unknown> | null,
+): string {
+  const sourcePayload = sourceRecord && isRecord(sourceRecord.payload) ? sourceRecord.payload : null;
+
+  return stringField(rawMeta?.event_type)
+    ?? stringField(rawMeta?.payload_type)
+    ?? stringField(raw?.event_type)
+    ?? stringField(raw?.payload_type)
+    ?? stringField(sourceRecord?.event_type)
+    ?? stringField(sourceRecord?.payload_type)
+    ?? stringField(sourcePayload?.type)
+    ?? stringField(ev.event_type)
+    ?? stringField(ev.payload_type)
+    ?? ev.kind;
+}
+
+function graphDetailNodeLabel(ev: TurnEvent): string {
+  const raw = recordFromMetadata(ev.metadata);
+  const rawMeta = raw ? recordFromMetadata(raw.metadata) : null;
+  const sourceRecord = sourceRecordForEvent(ev, raw, rawMeta);
+  return originalEventTypeForEvent(ev, raw, rawMeta, sourceRecord);
+}
+
 function tooltipMetadataForEvent(ev: TurnEvent): Record<string, unknown> {
   const structuredEvent = omitTooltipDisplayFields(ev);
 
   const raw = isRecord(ev.metadata) ? ev.metadata : null;
-  const rawMeta = raw
-    ? isRecord(raw.metadata)
-      ? raw.metadata
-      : typeof raw.metadata === "string"
-        ? parseJsonObject(raw.metadata)
-        : null
-    : null;
+  const rawMeta = raw ? recordFromMetadata(raw.metadata) : null;
   const sourceRecord = isRecord(ev.source_record) ? ev.source_record : null;
   const sourcePayload = sourceRecord && isRecord(sourceRecord.payload) ? sourceRecord.payload : null;
   delete structuredEvent.metadata;
@@ -757,19 +797,6 @@ function looksLikeAux(ev: RawEvent): boolean {
 }
 
 function toTurnEvent(ev: RawEvent): TurnEvent {
-  let title = kindLabel(ev.kind);
-  let summary = ev.content?.slice(0, 80) ?? ev.kind;
-
-  // For tool_call, use function_call:{tool_name} as the label
-  if (ev.kind === "tool_call") {
-    const toolName = extractToolName(ev.metadata);
-    if (toolName) {
-      const label = `function_call:${toolName}`;
-      title = label;
-      summary = label;
-    }
-  }
-
   // R5: Extract child_session_id from metadata for subagent_session events
   let childSessionId: string | undefined;
   if (ev.kind === "subagent_session") {
@@ -779,8 +806,8 @@ function toTurnEvent(ev: RawEvent): TurnEvent {
   return {
     event_id: ev.id,
     kind: ev.kind,
-    title,
-    summary,
+    title: kindLabel(ev.kind),
+    summary: ev.content?.slice(0, 80) ?? ev.kind,
     child_session_id: childSessionId,
     timestamp: ev.timestamp ?? undefined,
     source_line_no: ev.source_line_no ?? undefined,
