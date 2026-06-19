@@ -38,10 +38,8 @@ export function buildTimeline(
   const timeline = ownEvents.map((e) => ({ ...e }));
   for (const childSession of childSessions) {
     const branchMeta = session.branch_meta[childSession.session_id as string] ?? {};
-    const displayName = childSession.display_name as string ?? "子代理";
-    let title = `子代理分支 · ${displayName}`;
+    const displayName = childSession.display_name as string ?? "subagent";
     const promptPreview = stringOrNull(branchMeta.prompt_preview);
-    if (promptPreview) title = `${title}`;
     timeline.push({
       event_id: `subagent:${childSession.session_id}`,
       kind: "subagent_session",
@@ -51,9 +49,8 @@ export function buildTimeline(
         ?? stringOrNull((childSession.metrics as JSONDict)?.start_time),
       record_type: "event_msg",
       payload_type: stringOrNull(branchMeta.payload_type) ?? "collab_agent_spawn_end",
-      title,
+      title: `subagent branch · ${displayName}`,
       summary: subagentSummary(childSession, branchMeta),
-      detail_note: "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",
       prompt_preview: promptPreview,
       child_session_id: childSession.session_id,
     });
@@ -110,11 +107,7 @@ export function buildSessionPreambleDetails(session: SessionBuildRef): JSONDict[
     kind: "system_prompt",
     record_type: "session_meta",
     payload_type: null,
-    title: "系统内置规则",
-    summary: "Codex 默认系统规则（base_instructions）",
     content,
-    content_label: "规则内容",
-    intro: "Codex 启动时自动附带给模型的默认规则，不是用户手动输入。",
     estimated_input_tokens: estimateTextTokens(content),
     detail_note: "base_instructions",
     raw_record_id: session.source_raw_record_id,
@@ -173,11 +166,8 @@ function buildInputDetailEvent(event: JSONDict): JSONDict {
     session_id: event.session_id,
     timestamp: event.timestamp,
     kind: detailKind,
-    title: descriptor.title,
-    summary: descriptor.summary || stringOrNull(event.summary) || truncate(detailContent ?? "没有可见内容", 120),
+    summary: descriptor.summary || stringOrNull(event.summary) || truncate(detailContent ?? "", 120),
     content: detailContent,
-    content_label: descriptor.content_label,
-    intro: descriptor.intro,
     estimated_input_tokens: estimateTextTokens(detailContent),
     detail_note: event.title,
     raw_record_id: event.raw_record_id,
@@ -210,11 +200,8 @@ function buildInputPartDetails(anchor: JSONDict): JSONDict[] {
       kind: detailKind,
       record_type: "response_item",
       payload_type: "message",
-      title: descriptor.title,
       summary: descriptor.summary || truncate(content, 120),
       content,
-      content_label: descriptor.content_label,
-      intro: descriptor.intro,
       estimated_input_tokens: estimateTextTokens(content),
       detail_note: stringOrNull(partDict.type),
       raw_record_id: anchor.raw_record_id,
@@ -253,8 +240,8 @@ function isGuardianAssessmentMessage(event: JSONDict): boolean {
 function subagentSummary(childSession: JSONDict, branchMeta: JSONDict): string {
   const metrics = (typeof childSession.metrics === "object" && childSession.metrics !== null) ? childSession.metrics as JSONDict : {};
   const bits = [
-    stringOrNull(childSession.agent_role) ?? "子代理",
-    `${asInt(metrics.display_node_count)} 个节点`,
+    stringOrNull(childSession.agent_role) ?? "subagent",
+    `${asInt(metrics.display_node_count)} nodes`,
   ];
   if (asInt(metrics.total_tokens)) bits.push(`${asInt(metrics.total_tokens)} tokens`);
   const statusPreview = stringOrNull(branchMeta.status_preview);

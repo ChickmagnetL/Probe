@@ -42,20 +42,6 @@ ASSISTANT_SIDE_KINDS = {
     "turn_aborted",
     "input_image",
 }
-INPUT_DETAIL_TITLE = {
-    "input_prompt": "附加输入 · Prompt/指令",
-    "input_image": "附加输入 · 图片",
-    "input_hook": "附加输入 · Hook",
-    "input_attachment": "附加输入 · 附件",
-    "input_context": "附加输入 · 上下文",
-}
-INPUT_DETAIL_CONTENT_LABEL = {
-    "input_prompt": "Prompt 内容",
-    "input_image": "图片路径",
-    "input_hook": "Hook 信息",
-    "input_attachment": "附加内容",
-    "input_context": "上下文内容",
-}
 AUX_INPUT_PREFIXES = (
     "# AGENTS.md instructions",
     "<environment_context>",
@@ -519,10 +505,8 @@ def _build_timeline(
 
     for child_session in child_sessions:
         branch_meta = session.branch_meta.get(child_session["session_id"], {})
-        title = f"子代理分支 · {child_session['display_name']}"
+        title = f"subagent branch · {child_session['display_name']}"
         prompt_preview = _string(branch_meta.get("prompt_preview"))
-        if prompt_preview:
-            title = f"{title}"
         timeline.append(
             {
                 "event_id": f"subagent:{child_session['session_id']}",
@@ -536,7 +520,6 @@ def _build_timeline(
                 or "collab_agent_spawn_end",
                 "title": title,
                 "summary": _subagent_summary(child_session, branch_meta),
-                "detail_note": "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",
                 "prompt_preview": prompt_preview,
                 "child_session_id": child_session["session_id"],
             }
@@ -704,13 +687,10 @@ def _build_input_detail_event(event: dict[str, Any]) -> dict[str, Any]:
         "session_id": event.get("session_id"),
         "timestamp": event.get("timestamp"),
         "kind": detail_kind,
-        "title": descriptor["title"],
         "summary": descriptor["summary"]
         or _string(event.get("summary"))
-        or _truncate(detail_content or "没有可见内容", 120),
+        or _truncate(detail_content or "", 120),
         "content": detail_content,
-        "content_label": descriptor["content_label"],
-        "intro": descriptor["intro"],
         "estimated_input_tokens": estimate_text_tokens(detail_content),
         "detail_note": event.get("title"),
         "raw_record_id": event.get("raw_record_id"),
@@ -752,11 +732,8 @@ def _build_input_part_details(anchor: dict[str, Any]) -> list[dict[str, Any]]:
                 "session_id": anchor.get("session_id"),
                 "timestamp": anchor.get("timestamp"),
                 "kind": detail_kind,
-                "title": descriptor["title"],
                 "summary": descriptor["summary"] or _truncate(content, 120),
                 "content": content,
-                "content_label": descriptor["content_label"],
-                "intro": descriptor["intro"],
                 "estimated_input_tokens": estimate_text_tokens(content),
                 "detail_note": _string(part.get("type")),
                 "raw_record_id": anchor.get("raw_record_id"),
@@ -867,80 +844,11 @@ def _describe_input_detail(
     source_title: str | None = None,
     part_type: str | None = None,
 ) -> dict[str, str]:
-    normalized = (content or "").lstrip()
-    normalized_lower = normalized.lower()
-    part_type_lower = (part_type or "").lower()
-
-    if normalized.startswith("You are Codex"):
-        return {
-            "title": "系统内置规则",
-            "summary": "Codex 默认系统规则（base_instructions）",
-            "content_label": "规则内容",
-            "intro": "Codex 启动时自动附带给模型的默认规则，不是用户手动输入。",
-        }
-
-    if normalized.startswith("# AGENTS.md instructions"):
-        return {
-            "title": "项目规则（AGENTS.md）",
-            "summary": "项目规则（AGENTS.md）",
-            "content_label": "规则内容",
-            "intro": "仓库里的 AGENTS.md 规则，会和本轮输入一起提供给模型。",
-        }
-
-    if normalized.startswith("<environment_context>"):
-        return {
-            "title": "运行环境信息",
-            "summary": "运行环境信息",
-            "content_label": "环境内容",
-            "intro": "当前工作目录、日期、时区等运行环境信息，会随本轮输入一起提供给模型。",
-        }
-
-    if source_title == "开发者指令":
-        return {
-            "title": "开发者附加规则",
-            "summary": "开发者附加规则",
-            "content_label": "规则内容",
-            "intro": "这是开发者在本轮额外附带给模型的执行规则，不是用户直接输入的文本。",
-        }
-
-    if detail_kind == "input_hook" or "hook" in normalized_lower or "hook" in part_type_lower:
-        return {
-            "title": "Hook 输入",
-            "summary": "Hook 输入",
-            "content_label": "Hook 内容",
-            "intro": "这是本轮额外附带的 Hook 参数或 Hook 名称，会一起传给模型。",
-        }
-
-    if detail_kind == "input_image":
-        return {
-            "title": "图片输入",
-            "summary": "图片输入",
-            "content_label": "图片路径",
-            "intro": "这是和本轮提问一起传给模型的图片输入。",
-        }
-
-    if detail_kind == "input_attachment":
-        return {
-            "title": "附带附件",
-            "summary": "附带附件",
-            "content_label": "附件内容",
-            "intro": "这是和本轮输入一起附带的额外附件或结构化内容。",
-        }
-
-    if detail_kind == "input_prompt":
-        return {
-            "title": "附带规则/指令",
-            "summary": "附带规则/指令",
-            "content_label": "规则内容",
-            "intro": "这段内容不是用户自然语言提问，而是本轮一起传给模型的附加规则或提示。",
-        }
-
-    return {
-        "title": INPUT_DETAIL_TITLE[detail_kind],
-        "summary": _truncate(content or "", 120),
-        "content_label": INPUT_DETAIL_CONTENT_LABEL[detail_kind],
-        "intro": "这是和用户输入一起提供给模型的补充上下文。",
-    }
+    # Only the raw content summary is retained for input-detail events.
+    # Display labels (title/content_label/intro) were parser-built Chinese
+    # and have been removed; Show Detail displays the JSONL raw line instead.
+    del detail_kind, source_title, part_type
+    return {"summary": _truncate(content or "", 120)}
 
 
 def _build_synthetic_output_anchor(events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -950,14 +858,12 @@ def _build_synthetic_output_anchor(events: list[dict[str, Any]]) -> dict[str, An
         "session_id": tail_event.get("session_id"),
         "timestamp": tail_event.get("timestamp"),
         "kind": "assistant_output",
-        "title": "AI 输出",
         "summary": _truncate(
-            _string(tail_event.get("summary")) or "这轮只记录了中间产物，没有单独的最终回复。",
+            _string(tail_event.get("summary"))
+            or "intermediate artifacts only; no final reply recorded",
             120,
         ),
         "content": None,
-        "content_label": "消息内容",
-        "detail_note": "这轮没有单独的 assistant message，因此用中间产物生成了一个主锚点。",
         "raw_record_id": tail_event.get("raw_record_id"),
         "source_path": tail_event.get("source_path"),
         "source_line_no": tail_event.get("source_line_no"),
@@ -1010,11 +916,7 @@ def _build_session_preamble_details(session: SessionBuild) -> list[dict[str, Any
             "kind": "system_prompt",
             "record_type": "session_meta",
             "payload_type": None,
-            "title": "系统内置规则",
-            "summary": "Codex 默认系统规则（base_instructions）",
             "content": content,
-            "content_label": "规则内容",
-            "intro": "Codex 启动时自动附带给模型的默认规则，不是用户手动输入。",
             "estimated_input_tokens": estimate_text_tokens(content),
             "detail_note": "base_instructions",
             "raw_record_id": session.source_raw_record_id,
@@ -1147,13 +1049,6 @@ def _build_message_event(row: dict[str, Any], session_id: str) -> dict[str, Any]
     kind = _message_kind(role, phase)
     if kind == "user_input" and (content or "").lstrip().startswith("# AGENTS.md instructions"):
         kind = "agents_md"
-    title = {
-        "agents_md": "项目规则（AGENTS.md）",
-        "user_input": "用户输入",
-        "assistant_output": "最终回复",
-        "assistant_update": "处理中回复",
-        "instruction": "开发者指令",
-    }.get(kind, _role_label(role))
     return {
         "event_id": row.get("message_id") or row.get("raw_record_id"),
         "session_id": session_id,
@@ -1163,11 +1058,8 @@ def _build_message_event(row: dict[str, Any], session_id: str) -> dict[str, Any]
         "payload_type": _string(row.get("payload_type")) or "message",
         "role": role,
         "phase": phase,
-        "title": title,
-        "summary": _truncate(content or "没有可见文本", 120),
         "content": content,
         "content_parts": content_parts,
-        "content_label": "消息内容",
         "estimated_input_tokens": (
             estimate_text_tokens(content)
             if kind in USER_SIDE_KINDS
@@ -1181,7 +1073,6 @@ def _build_message_event(row: dict[str, Any], session_id: str) -> dict[str, Any]
 
 
 def _build_tool_call_event(row: dict[str, Any], session_id: str) -> dict[str, Any]:
-    tool_name = _string(row.get("tool_name")) or "unknown_tool"
     args = _string(row.get("arguments_raw")) or _string(row.get("input_raw"))
     return {
         "event_id": row.get("tool_call_id") or row.get("raw_record_id"),
@@ -1192,10 +1083,7 @@ def _build_tool_call_event(row: dict[str, Any], session_id: str) -> dict[str, An
         "payload_type": _string(row.get("payload_type")),
         "name": _string(row.get("tool_name")),
         "call_id": _string(row.get("call_id")),
-        "title": f"工具调用 · {tool_name}",
-        "summary": _truncate(args or "已记录调用参数", 96),
         "args": args,
-        "content_label": "调用参数",
         "raw_record_id": row.get("raw_record_id"),
         "source_path": row.get("source_path"),
         "source_line_no": row.get("source_line_no"),
@@ -1214,10 +1102,7 @@ def _build_tool_output_event(row: dict[str, Any], session_id: str) -> dict[str, 
         "record_type": _string(row.get("record_type")) or "response_item",
         "payload_type": _string(row.get("payload_type")),
         "call_id": _string(row.get("call_id")),
-        "title": "工具输出",
-        "summary": _truncate(output or status or "工具已返回输出", 96),
         "content": output,
-        "content_label": "输出内容",
         "detail_note": status,
         "raw_record_id": row.get("raw_record_id"),
         "source_path": row.get("source_path"),
@@ -1231,13 +1116,6 @@ def _build_turn_aborted_event(
     session_id: str,
 ) -> dict[str, Any]:
     reason = _string(row.get("reason")) or "Unknown"
-    reason_labels = {
-        "interrupted": "用户中断",
-        "budgetlimited": "预算耗尽",
-        "replaced": "被替换",
-        "reviewended": "审查结束",
-    }
-    reason_label = reason_labels.get(reason.lower(), reason)
     turn_id = _string(row.get("turn_id"))
     return {
         "event_id": row.get("event_id") or row.get("raw_record_id"),
@@ -1248,10 +1126,7 @@ def _build_turn_aborted_event(
         "payload_type": _string(row.get("payload_type")) or "turn_aborted",
         "role": None,
         "phase": None,
-        "title": f"回合中止 · {reason_label}",
-        "summary": _truncate(f"回合 {turn_id} 因 {reason_label} 中止", 120),
-        "content": f"回合 {turn_id} 因 {reason_label} 中止" if turn_id else f"回合因 {reason_label} 中止",
-        "content_label": "中止详情",
+        "content": f"Turn {turn_id} aborted: {reason}" if turn_id else f"Turn aborted: {reason}",
         "detail_note": reason,
         "turn_id": turn_id,
         "raw_record_id": row.get("raw_record_id"),
@@ -1278,10 +1153,7 @@ def _build_parser_event(
         "payload_type": _string(row.get("payload_type")),
         "role": None,
         "phase": None,
-        "title": _event_title(event_type),
-        "summary": _truncate(_event_summary(row, event_type, content), 120),
         "content": content,
-        "content_label": "事件详情",
         "detail_note": _string(row.get("status")) or _string(row.get("error_type")),
         "name": _string(row.get("name")) or _string(row.get("tool_name")),
         "call_id": _string(row.get("call_id")),
@@ -1310,28 +1182,6 @@ def _build_parser_event(
         "raw_text": row.get("raw_text"),
         "event_type": event_type,
     }
-
-
-def _event_title(event_type: str) -> str:
-    return {
-        "exec_command_begin": "命令开始",
-        "exec_command_end": "命令结果",
-        "patch_apply_end": "文件修改结果",
-        "mcp_tool_call_end": "外部工具结果",
-        "view_image_tool_call": "查看图片",
-        "image_generation_call": "图片生成",
-        "web_search_call": "网页搜索",
-        "web_search_begin": "网页搜索开始",
-        "web_search_end": "网页搜索结果",
-        "guardian_assessment": "安全审查",
-        "error": "错误",
-        "stream_error": "流错误",
-        "thread_rolled_back": "线程回滚",
-        "turn_diff": "回合变更",
-        "plan_update": "计划更新",
-        "thread_goal_updated": "目标更新",
-        "context_compacted": "上下文压缩",
-    }.get(event_type, event_type)
 
 
 def _event_content(row: dict[str, Any], event_type: str) -> str | None:
@@ -1375,24 +1225,6 @@ def _event_content(row: dict[str, Any], event_type: str) -> str | None:
     )
 
 
-def _event_summary(
-    row: dict[str, Any],
-    event_type: str,
-    content: str | None,
-) -> str:
-    if event_type in {"exec_command_end", "exec_command_begin"}:
-        command = _string(row.get("command_text"))
-        exit_note = f" exit {row.get('exit_code')}" if isinstance(row.get("exit_code"), int) else ""
-        return f"{command}{exit_note}" if command else (content or event_type)
-    if event_type == "patch_apply_end":
-        changes = row.get("changes")
-        count = len(changes) if isinstance(changes, dict) else 0
-        return f"{count} file change{'s' if count != 1 else ''}" if count else (content or event_type)
-    if event_type == "thread_rolled_back" and isinstance(row.get("num_turns"), int):
-        return f"{row.get('num_turns')} turn(s) rolled back"
-    return content or _string(row.get("status")) or event_type
-
-
 def _first_unified_diff(value: Any) -> str | None:
     if not isinstance(value, dict):
         return None
@@ -1403,6 +1235,7 @@ def _first_unified_diff(value: Any) -> str | None:
         if diff:
             return diff
     return None
+
 
 def _build_telemetry_snapshot(row: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -1616,12 +1449,8 @@ def _expand_input_image_events(
                     "payload_type": "message",
                     "role": None,
                     "phase": None,
-                    "title": INPUT_DETAIL_TITLE.get("input_image", "附加输入 · 图片"),
                     "summary": _truncate(content, 120),
                     "content": content,
-                    "content_label": INPUT_DETAIL_CONTENT_LABEL.get(
-                        "input_image", "图片内容"
-                    ),
                     "detail_note": _string(part.get("type")),
                     "raw_record_id": event.get("raw_record_id"),
                     "source_path": event.get("source_path"),
@@ -1649,17 +1478,17 @@ def _inject_subagent_events_flat(
         display_name = child.agent_nickname or child_id[:8]
         child_metrics = _calculate_own_metrics(child)
         bits = [
-            child.agent_role or "子代理",
+            child.agent_role or "subagent",
         ]
         if child_metrics.get("display_node_count"):
-            bits.append(f"{child_metrics['display_node_count']} 个节点")
+            bits.append(f"{child_metrics['display_node_count']} nodes")
         if child_metrics.get("total_tokens"):
             bits.append(f"{child_metrics['total_tokens']} tokens")
         status_preview = _string(branch_meta.get("status_preview"))
         if status_preview:
             bits.append(status_preview)
         summary = " · ".join(bit for bit in bits if bit)
-        title = f"子代理分支 · {display_name}"
+        title = f"subagent branch · {display_name}"
         prompt_preview = _string(branch_meta.get("prompt_preview"))
         own_events.append(
             {
@@ -1673,7 +1502,6 @@ def _inject_subagent_events_flat(
                 or "collab_agent_spawn_end",
                 "title": title,
                 "summary": summary,
-                "detail_note": "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",
                 "prompt_preview": prompt_preview,
                 "child_session_id": child_id,
             }
@@ -1723,8 +1551,8 @@ def _subagent_summary(
     branch_meta: dict[str, Any],
 ) -> str:
     bits = [
-        child_session.get("agent_role") or "子代理",
-        f"{child_session['metrics']['display_node_count']} 个节点",
+        child_session.get("agent_role") or "subagent",
+        f"{child_session['metrics']['display_node_count']} nodes",
     ]
     if child_session["metrics"].get("total_tokens"):
         bits.append(f"{child_session['metrics']['total_tokens']} tokens")
@@ -1744,15 +1572,6 @@ def _message_kind(role: str | None, phase: str | None) -> str:
     if role == "developer":
         return "instruction"
     return "instruction"
-
-
-def _role_label(role: str | None) -> str:
-    mapping = {
-        "user": "用户",
-        "assistant": "助手",
-        "developer": "开发者",
-    }
-    return mapping.get(role, role or "消息")
 
 
 def _flatten_status(value: Any) -> str | None:

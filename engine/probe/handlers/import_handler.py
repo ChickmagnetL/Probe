@@ -84,7 +84,10 @@ def _to_event_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for event in events:
         row = dict(event)
-        row["content"] = event.get("content") or event.get("summary")
+        # `content` is the engine-built display content; do not fall back to the
+        # parser-built `summary` (removed). Empty content is preserved as-is —
+        # the detail panel shows the JSONL raw line via Show Detail.
+        row["content"] = event.get("content")
         row["source_line_no"] = event.get("source_line_no")
         rows.append(row)
     return rows

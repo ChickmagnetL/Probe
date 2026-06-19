@@ -275,25 +275,12 @@ function sortedRootSessionIds(sessions: Map<string, SessionBuild>): string[] {
 
 // ── Event builders (used by collectEvents) ──────────────
 
-const KIND_LABELS: Record<string, string> = {
-  agents_md: "项目规则（AGENTS.md）",
-  user_input: "用户输入",
-  assistant_output: "最终回复",
-  assistant_update: "处理中回复",
-  instruction: "开发者指令",
-};
-
 function messageKind(role: string | null, phase: string | null): string {
   if (role === "user") return "user_input";
   if (role === "assistant" && phase === "final_answer") return "assistant_output";
   if (role === "assistant") return "assistant_update";
   if (role === "developer") return "instruction";
   return "instruction";
-}
-
-function roleLabel(role: string | null): string {
-  const map: Record<string, string> = { user: "用户", assistant: "助手", developer: "开发者" };
-  return map[role ?? ""] ?? role ?? "消息";
 }
 
 function truncate(text: string, limit: number): string {
@@ -315,7 +302,6 @@ function buildMessageEvent(row: JSONDict, session_id: string): JSONDict {
   const contentParts = Array.isArray(row.content_parts) ? row.content_parts : [];
   let kind = messageKind(role, phase);
   if (kind === "user_input" && (content ?? "").startsWith("# AGENTS.md instructions")) kind = "agents_md";
-  const title = KIND_LABELS[kind] ?? roleLabel(role);
   const isUserSide = kind === "user_input" || kind === "agents_md" || kind === "instruction";
   return {
     event_id: row.message_id ?? row.raw_record_id,
@@ -326,11 +312,8 @@ function buildMessageEvent(row: JSONDict, session_id: string): JSONDict {
     payload_type: stringOrNull(row.payload_type) ?? "message",
     role,
     phase,
-    title,
-    summary: truncate(content ?? "没有可见文本", 120),
     content,
     content_parts: contentParts,
-    content_label: "消息内容",
     estimated_input_tokens: isUserSide ? 0 : null,
     raw_record_id: row.raw_record_id,
     source_path: row.source_path,
@@ -340,7 +323,6 @@ function buildMessageEvent(row: JSONDict, session_id: string): JSONDict {
 }
 
 function buildToolCallEvent(row: JSONDict, session_id: string): JSONDict {
-  const toolName = stringOrNull(row.tool_name) ?? "unknown_tool";
   const args = stringOrNull(row.arguments_raw) ?? stringOrNull(row.input_raw);
   return {
     event_id: row.tool_call_id ?? row.raw_record_id,
@@ -351,10 +333,7 @@ function buildToolCallEvent(row: JSONDict, session_id: string): JSONDict {
     payload_type: stringOrNull(row.payload_type),
     name: stringOrNull(row.tool_name),
     call_id: stringOrNull(row.call_id),
-    title: `工具调用 · ${toolName}`,
-    summary: truncate(args ?? "已记录调用参数", 96),
     args,
-    content_label: "调用参数",
     raw_record_id: row.raw_record_id,
     source_path: row.source_path,
     source_line_no: row.source_line_no,
@@ -373,10 +352,7 @@ function buildToolOutputEvent(row: JSONDict, session_id: string): JSONDict {
     record_type: stringOrNull(row.record_type) ?? "response_item",
     payload_type: stringOrNull(row.payload_type),
     call_id: stringOrNull(row.call_id),
-    title: "工具输出",
-    summary: truncate(output ?? status ?? "工具已返回输出", 96),
     content: output,
-    content_label: "输出内容",
     detail_note: status,
     raw_record_id: row.raw_record_id,
     source_path: row.source_path,
@@ -387,17 +363,10 @@ function buildToolOutputEvent(row: JSONDict, session_id: string): JSONDict {
 
 function buildTurnAbortedEvent(row: JSONDict, session_id: string): JSONDict {
   const reason = stringOrNull(row.reason) ?? "Unknown";
-  const reasonLabels: Record<string, string> = {
-    interrupted: "用户中断",
-    budgetlimited: "预算耗尽",
-    replaced: "被替换",
-    reviewended: "审查结束",
-  };
-  const reasonLabel = reasonLabels[reason.toLowerCase()] ?? reason;
   const turnId = stringOrNull(row.turn_id);
   const contentText = turnId
-    ? `回合 ${turnId} 因 ${reasonLabel} 中止`
-    : `回合因 ${reasonLabel} 中止`;
+    ? `Turn ${turnId} aborted: ${reason}`
+    : `Turn aborted: ${reason}`;
   return {
     event_id: row.event_id ?? row.raw_record_id,
     session_id,
@@ -407,10 +376,7 @@ function buildTurnAbortedEvent(row: JSONDict, session_id: string): JSONDict {
     payload_type: stringOrNull(row.payload_type) ?? "turn_aborted",
     role: null,
     phase: null,
-    title: `回合中止 · ${reasonLabel}`,
-    summary: truncate(contentText, 120),
     content: contentText,
-    content_label: "中止详情",
     detail_note: reason,
     raw_record_id: row.raw_record_id,
     source_path: row.source_path,
@@ -443,7 +409,6 @@ function buildTelemetrySnapshot(row: JSONDict): JSONDict {
 
 function buildParserEvent(row: JSONDict, session_id: string, kind: string): JSONDict {
   const eventType = stringOrNull(row.event_type) ?? stringOrNull(row.payload_type) ?? "event";
-  const title = eventTitle(eventType);
   const content = eventContent(row, eventType);
   return {
     event_id: row.event_id ?? row.raw_record_id,
@@ -454,10 +419,7 @@ function buildParserEvent(row: JSONDict, session_id: string, kind: string): JSON
     payload_type: stringOrNull(row.payload_type),
     role: null,
     phase: null,
-    title,
-    summary: truncate(eventSummary(row, eventType, content), 120),
     content,
-    content_label: "事件详情",
     detail_note: stringOrNull(row.status) ?? stringOrNull(row.error_type),
     name: stringOrNull(row.name) ?? stringOrNull(row.tool_name),
     call_id: stringOrNull(row.call_id),
@@ -484,29 +446,6 @@ function buildParserEvent(row: JSONDict, session_id: string, kind: string): JSON
     raw_text: row.raw_text,
     event_type: eventType,
   };
-}
-
-function eventTitle(eventType: string): string {
-  const labels: Record<string, string> = {
-    exec_command_begin: "命令开始",
-    exec_command_end: "命令结果",
-    patch_apply_end: "文件修改结果",
-    mcp_tool_call_end: "外部工具结果",
-    view_image_tool_call: "查看图片",
-    image_generation_call: "图片生成",
-    web_search_call: "网页搜索",
-    web_search_begin: "网页搜索开始",
-    web_search_end: "网页搜索结果",
-    guardian_assessment: "安全审查",
-    error: "错误",
-    stream_error: "流错误",
-    thread_rolled_back: "线程回滚",
-    turn_diff: "回合变更",
-    plan_update: "计划更新",
-    thread_goal_updated: "目标更新",
-    context_compacted: "上下文压缩",
-  };
-  return labels[eventType] ?? eventType;
 }
 
 function eventContent(row: JSONDict, eventType: string): string | null {
@@ -543,22 +482,6 @@ function eventContent(row: JSONDict, eventType: string): string | null {
   return stringOrNull(row.message) ?? stringOrNull(row.summary) ?? jsonishText(row.payload);
 }
 
-function eventSummary(row: JSONDict, eventType: string, content: string | null): string {
-  if (eventType === "exec_command_end" || eventType === "exec_command_begin") {
-    const cmd = stringOrNull(row.command_text);
-    const exit = typeof row.exit_code === "number" ? ` exit ${row.exit_code}` : "";
-    return cmd ? `${cmd}${exit}` : content ?? eventType;
-  }
-  if (eventType === "patch_apply_end") {
-    const changes = objectKeyCount(row.changes);
-    return changes > 0 ? `${changes} file change${changes === 1 ? "" : "s"}` : content ?? eventType;
-  }
-  if (eventType === "thread_rolled_back" && typeof row.num_turns === "number") {
-    return `${row.num_turns} turn(s) rolled back`;
-  }
-  return content ?? stringOrNull(row.status) ?? eventType;
-}
-
 function firstUnifiedDiff(value: unknown): string | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   for (const item of Object.values(value as JSONDict)) {
@@ -568,12 +491,6 @@ function firstUnifiedDiff(value: unknown): string | null {
     }
   }
   return null;
-}
-
-function objectKeyCount(value: unknown): number {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? Object.keys(value as JSONDict).length
-    : 0;
 }
 
 // ── Public API ──────────────────────────────────────────

@@ -80,7 +80,7 @@ function eventToRow(e: JSONDict): EventRow {
     timestamp: (e.timestamp as string) ?? null,
     role: (e.role as string) ?? null,
     phase: (e.phase as string) ?? null,
-    content: (e.content as string) ?? (e.summary as string) ?? null,
+    content: (e.content as string) ?? null,
     metadata: JSON.stringify(e),
     source_line_no: typeof e.source_line_no === "number" ? e.source_line_no : null,
   };

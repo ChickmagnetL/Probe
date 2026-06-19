@@ -121,8 +121,8 @@ export interface SessionEvent {
   kind: string;
   role?: string;
   phase?: string;
-  title: string;
-  summary: string;
+  title?: string;
+  summary?: string;
   content?: string | null;
   content_parts?: unknown[];
   content_label?: string;

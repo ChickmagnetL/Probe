@@ -112,22 +112,6 @@ export function pickPrimaryInputAnchor(userEvents: Record<string, unknown>[]): R
 
 const IMAGE_PATH_SUFFIXES = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"];
 
-const INPUT_DETAIL_TITLES: Record<string, string> = {
-  input_prompt: "附加输入 · Prompt/指令",
-  input_image: "附加输入 · 图片",
-  input_hook: "附加输入 · Hook",
-  input_attachment: "附加输入 · 附件",
-  input_context: "附加输入 · 上下文",
-};
-
-const INPUT_DETAIL_CONTENT_LABELS: Record<string, string> = {
-  input_prompt: "Prompt 内容",
-  input_image: "图片路径",
-  input_hook: "Hook 信息",
-  input_attachment: "附加内容",
-  input_context: "上下文内容",
-};
-
 export function classifyInputDetailKind(event: Record<string, unknown>): string {
   if (stringOrNull(event.kind) === "instruction") return "input_prompt";
   const parts = event.content_parts;
@@ -178,40 +162,14 @@ export function describeInputDetail(
   content: string | null,
   sourceTitle?: string | null,
   partType?: string | null,
-): { title: string; summary: string; content_label: string; intro: string } {
-  const normalized = (content ?? "").trimStart();
-  const partTypeLower = (partType ?? "").toLowerCase();
-
-  if (normalized.startsWith("You are Codex")) {
-    return { title: "系统内置规则", summary: "Codex 默认系统规则（base_instructions）", content_label: "规则内容", intro: "Codex 启动时自动附带给模型的默认规则，不是用户手动输入。" };
-  }
-  if (normalized.startsWith("# AGENTS.md instructions")) {
-    return { title: "项目规则（AGENTS.md）", summary: "项目规则（AGENTS.md）", content_label: "规则内容", intro: "仓库里的 AGENTS.md 规则，会和本轮输入一起提供给模型。" };
-  }
-  if (normalized.startsWith("<environment_context>")) {
-    return { title: "运行环境信息", summary: "运行环境信息", content_label: "环境内容", intro: "当前工作目录、日期、时区等运行环境信息，会随本轮输入一起提供给模型。" };
-  }
-  if (sourceTitle === "开发者指令") {
-    return { title: "开发者附加规则", summary: "开发者附加规则", content_label: "规则内容", intro: "这是开发者在本轮额外附带给模型的执行规则，不是用户直接输入的文本。" };
-  }
-  if (detailKind === "input_hook" || normalized.toLowerCase().includes("hook") || partTypeLower.includes("hook")) {
-    return { title: "Hook 输入", summary: "Hook 输入", content_label: "Hook 内容", intro: "这是本轮额外附带的 Hook 参数或 Hook 名称，会一起传给模型。" };
-  }
-  if (detailKind === "input_image") {
-    return { title: "图片输入", summary: "图片输入", content_label: "图片路径", intro: "这是和本轮提问一起传给模型的图片输入。" };
-  }
-  if (detailKind === "input_attachment") {
-    return { title: "附带附件", summary: "附带附件", content_label: "附件内容", intro: "这是和本轮输入一起附带的额外附件或结构化内容。" };
-  }
-  if (detailKind === "input_prompt") {
-    return { title: "附带规则/指令", summary: "附带规则/指令", content_label: "规则内容", intro: "这段内容不是用户自然语言提问，而是本轮一起传给模型的附加规则或提示。" };
-  }
-  return {
-    title: INPUT_DETAIL_TITLES[detailKind] ?? "附加输入",
-    summary: truncate(content ?? "", 120),
-    content_label: INPUT_DETAIL_CONTENT_LABELS[detailKind] ?? "内容",
-    intro: "这是和用户输入一起提供给模型的补充上下文。",
-  };
+): { summary: string } {
+  // Only the raw content summary is retained for input-detail events.
+  // Display labels (title/content_label/intro) were parser-built Chinese
+  // and have been removed; Show Detail displays the JSONL raw line instead.
+  void detailKind;
+  void sourceTitle;
+  void partType;
+  return { summary: truncate(content ?? "", 120) };
 }
 
 function jsonishText(value: unknown): string | null {

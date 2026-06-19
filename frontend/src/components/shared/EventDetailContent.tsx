@@ -320,17 +320,16 @@ export function MetadataSection({
 }) {
   const parsed = parseMetadata(metadata);
 
-  // Extract raw_text (original JSONL line) from metadata
+  // Show Detail displays the original JSONL line for this event, not the
+  // parser-built metadata. `raw_text` is filled by the reader for every
+  // parsed event and survives into the persisted metadata (event_dao keeps
+  // every key except a small skip set), so it is the canonical source.
   const rawText =
     parsed && typeof parsed === "object" && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>).raw_text
       : null;
-  const hasStructuredFields =
-    parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? Object.keys(parsed as Record<string, unknown>).some((key) => key !== "raw_text" && key !== "source_record")
-      : false;
-
-  const displayValue = hasStructuredFields ? parsed : rawText ?? parsed;
+  const displayValue: unknown =
+    typeof rawText === "string" && rawText.length > 0 ? rawText : parsed;
 
   return (
     <details className="rounded-md border border-border overflow-hidden group">

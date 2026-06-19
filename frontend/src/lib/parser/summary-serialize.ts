@@ -337,8 +337,8 @@ function injectSubagentEventsFlat(
     const branchMeta = parentSession.branch_meta[childId] ?? {};
     const childMetrics = calculateOwnMetrics(child);
     const summaryBits = [
-      child.agent_role ?? "子代理",
-      childMetrics.display_node_count ? `${childMetrics.display_node_count} 个节点` : null,
+      child.agent_role ?? "subagent",
+      childMetrics.display_node_count ? `${childMetrics.display_node_count} nodes` : null,
       childMetrics.total_tokens ? `${childMetrics.total_tokens} tokens` : null,
       stringOrNull(branchMeta.status_preview),
     ].filter((value): value is string => Boolean(value));
@@ -351,9 +351,8 @@ function injectSubagentEventsFlat(
       payload_type: stringOrNull(branchMeta.payload_type) ?? "collab_agent_spawn_end",
       role: null,
       phase: null,
-      title: `子代理分支 · ${child.agent_nickname ?? childId.slice(0, 8)}`,
+      title: `subagent branch · ${child.agent_nickname ?? childId.slice(0, 8)}`,
       summary: summaryBits.join(" · "),
-      detail_note: "从左侧栏聚焦这个子会话时，会突出当前子链，其余分支会被弱化显示。",
       prompt_preview: stringOrNull(branchMeta.prompt_preview),
       child_session_id: childId,
       status: stringOrNull(branchMeta.status_preview),
@@ -410,10 +409,8 @@ function expandInputImageEvents(
         payload_type: "message",
         role: null,
         phase: null,
-        title: "附加输入 · 图片",
         summary: truncate(content, 120),
         content,
-        content_label: "图片路径",
         detail_note: partType || "image",
         raw_record_id: event.raw_record_id,
         source_path: event.source_path,
