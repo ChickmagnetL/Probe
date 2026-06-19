@@ -11,7 +11,27 @@ def is_rollout_file(path: Path) -> bool:
     return path.is_file() and path.name.startswith("rollout-") and path.suffix == ".jsonl"
 
 
-def discover_rollout_files(input_path: str | Path) -> list[Path]:
+def discover_rollout_files(input_path: str | Path | list[str | Path]) -> list[Path]:
+    # A list of file paths is accepted so batch import can parse multiple
+    # rollout files together while preserving cross-file subagent links.
+    if isinstance(input_path, list):
+        files: list[Path] = []
+        for entry in input_path:
+            p = Path(entry).expanduser()
+            if not is_rollout_file(p):
+                raise ValueError(f"unsupported input file: {p}")
+            files.append(p.resolve())
+        if not files:
+            raise ValueError("empty file list passed to discover_rollout_files")
+        # Preserve caller order; deduplicate while keeping first occurrence.
+        seen: set[Path] = set()
+        ordered: list[Path] = []
+        for f in files:
+            if f not in seen:
+                seen.add(f)
+                ordered.append(f)
+        return ordered
+
     path = Path(input_path).expanduser()
     if path.is_file():
         if not is_rollout_file(path):
@@ -19,7 +39,13 @@ def discover_rollout_files(input_path: str | Path) -> list[Path]:
         return [path.resolve()]
 
     if path.is_dir():
-        files = sorted(candidate.resolve() for candidate in path.iterdir() if is_rollout_file(candidate))
+        # Codex sessions are nested under year/month/day subdirectories, so a
+        # shallow iterdir() misses them. Recursively collect rollout files.
+        files = sorted(
+            candidate.resolve()
+            for candidate in path.rglob("rollout-*.jsonl")
+            if is_rollout_file(candidate)
+        )
         if not files:
             raise ValueError(f"no rollout-*.jsonl files found in directory: {path}")
         return files

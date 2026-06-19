@@ -2,6 +2,8 @@ import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { useSessionStore } from "../stores/session";
 import { useImportStore } from "../stores/import";
 import { usePanelStore } from "../stores/panel";
+import { useSettingsStore } from "../stores/settings";
+import { useImportProgressStore } from "../stores/import_progress";
 import { SessionList } from "../components/session/SessionList";
 import { PanelContainer } from "../components/panel/PanelContainer";
 import { EmptyState } from "../components/shared/EmptyState";
@@ -18,6 +20,8 @@ import { ErrorBoundary } from "../components/shared/ErrorBoundary";
 import { TitleDragRegion } from "../components/shared/TitleBar";
 import { FilterBar } from "../components/shared/FilterBar";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog";
+import { SettingsPanel } from "../components/settings/SettingsPanel";
+import { ProgressBar } from "../components/shared/ProgressBar";
 import type { EventRow } from "../ipc/types";
 
 const SORT_OPTIONS = [
@@ -67,6 +71,17 @@ export function AppView() {
   const openImportModal = useImportStore((s) => s.openModal);
   const root = usePanelStore((s) => s.root);
   const resetLayout = usePanelStore((s) => s.resetLayout);
+
+  // Settings + incremental import
+  const settingsInitialized = useSettingsStore((s) => s.initialized);
+  const settingsLoad = useSettingsStore((s) => s.load);
+  const codexPath = useSettingsStore((s) => s.settings.codex_path);
+  const runIncrementalImport = useImportProgressStore((s) => s.runIncrementalImport);
+  const importActive = useImportProgressStore((s) => s.active);
+  const importTotal = useImportProgressStore((s) => s.total);
+  const importProcessed = useImportProgressStore((s) => s.processed);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const autoScanStartedRef = useRef(false);
 
   // Sidebar width state: null = CSS clamp default, number = user-dragged px value
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(null);
@@ -137,6 +152,21 @@ export function AppView() {
     window.addEventListener("dev-mock-updated", handler);
     return () => window.removeEventListener("dev-mock-updated", handler);
   }, [fetchSessions]);
+
+  // Load settings on mount; once loaded, trigger a background incremental
+  // scan/import if a Codex path is configured. Guarded by a ref so StrictMode
+  // double-invoke and re-renders do not start a second concurrent run.
+  useEffect(() => {
+    if (!settingsInitialized) {
+      void settingsLoad();
+      return;
+    }
+    if (autoScanStartedRef.current) return;
+    if (codexPath) {
+      autoScanStartedRef.current = true;
+      void runIncrementalImport(codexPath);
+    }
+  }, [settingsInitialized, codexPath, settingsLoad, runIncrementalImport]);
 
   const sortedEvents = useMemo(() => {
     if (!detail?.events) return [];
@@ -284,6 +314,18 @@ export function AppView() {
           </TitleDragRegion>
           <button
             data-tauri-drag-region="false"
+            onClick={() => setSettingsOpen(true)}
+            className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-112 active:scale-90"
+            aria-label="Settings"
+            type="button"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+            </svg>
+          </button>
+          <button
+            data-tauri-drag-region="false"
             onClick={handleDeleteClick}
             className={`p-2 rounded-lg transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-112 active:scale-90 ${selectionMode && selectedCount > 0 ? 'text-destructive bg-destructive/10 hover:bg-destructive/20' : selectionMode ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
             aria-label={selectionMode && selectedCount > 0 ? "Delete selected" : selectionMode ? "Exit selection" : "Delete sessions"}
@@ -345,6 +387,20 @@ export function AppView() {
               />
             )}
           </div>
+          {importActive && (
+            <div className="px-4 py-2 border-b border-border bg-muted/30">
+              <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 border-2 border-muted border-t-accent rounded-full animate-spin" />
+                  Scanning & importing sessions
+                </span>
+                <span className="tabular-nums">
+                  {importProcessed}/{importTotal}
+                </span>
+              </div>
+              <ProgressBar value={importProcessed} max={importTotal || 1} />
+            </div>
+          )}
           <SessionList
             onSessionSelect={handleSessionSelect}
             filterText={search}
@@ -423,6 +479,8 @@ export function AppView() {
           </label>
         </ConfirmDialog>
       )}
+
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
     </ErrorBoundary>
   );

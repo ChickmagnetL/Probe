@@ -17,7 +17,7 @@ def handle_list(params: dict[str, Any]) -> dict[str, Any]:
         filter_text=params.get("filter"),
         sort_by=params.get("sort", "imported_at"),
         sort_order=params.get("sort_order", "desc"),
-        limit=params.get("limit", 100),
+        limit=params.get("limit", 5000),
         offset=params.get("offset", 0),
     )
     return {"sessions": sessions, "total": total}

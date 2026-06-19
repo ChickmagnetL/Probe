@@ -2,6 +2,7 @@
 """Probe sidecar server — stdin/stdout JSON IPC bridge."""
 
 import json
+import logging
 import signal
 import sys
 from pathlib import Path
@@ -12,18 +13,25 @@ signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from probe.handlers import import_handler, session_handler
+logger = logging.getLogger(__name__)
+
+from probe.handlers import import_handler, scan_handler, session_handler, settings_handler
 from probe.storage import get_connection, initialize_schema, close_connection
 
 HANDLERS = {
     "import_files": import_handler.handle,
+    "import_files_batch": import_handler.handle_batch,
+    "scan_codex_sessions": scan_handler.handle_scan_codex_sessions,
     "list_sessions": session_handler.handle_list,
     "get_session_detail": session_handler.handle_detail,
     "delete_sessions": session_handler.handle_delete,
+    "get_settings": settings_handler.handle_get,
+    "set_settings": settings_handler.handle_set,
 }
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     conn = get_connection()
     initialize_schema(conn)
 
@@ -49,7 +57,12 @@ def main() -> None:
         try:
             result = HANDLERS[method](params)
             _write_result(req_id, result)
+        except ValueError as exc:
+            _write_error(req_id, "BAD_REQUEST", str(exc))
+        except (KeyError, FileNotFoundError) as exc:
+            _write_error(req_id, "NOT_FOUND", str(exc))
         except Exception as exc:
+            logger.error("handler failed: method=%s", method, exc_info=True)
             _write_error(req_id, "INTERNAL_ERROR", str(exc))
 
     close_connection()

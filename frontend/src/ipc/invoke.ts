@@ -1,8 +1,11 @@
 import type {
+  ImportBatchResult,
   ImportResult,
   ListSessionsParams,
   ListSessionsResult,
+  ScanResult,
   SessionDetail,
+  Settings,
 } from "./types";
 
 type InvokeFn = <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -28,6 +31,41 @@ export const invoke = {
     return fn<ImportResult>("engine_call", {
       method: "import_files",
       params: { input_path: inputPath },
+    });
+  },
+
+  async scanCodexSessions(path: string): Promise<ScanResult> {
+    const fn = await getInvoke();
+    return fn<ScanResult>("engine_call", {
+      method: "scan_codex_sessions",
+      params: { path },
+    });
+  },
+
+  async importFilesBatch(filePaths: string[]): Promise<ImportBatchResult> {
+    const fn = await getInvoke();
+    return fn<ImportBatchResult>("engine_call", {
+      method: "import_files_batch",
+      params: { file_paths: filePaths },
+    });
+  },
+
+  async getSettings(): Promise<Settings> {
+    const fn = await getInvoke();
+    return fn<Settings>("engine_call", {
+      method: "get_settings",
+      params: {},
+    });
+  },
+
+  async setSettings(
+    key: string,
+    value: string | number | boolean,
+  ): Promise<{ key: string; value: string | number | boolean }> {
+    const fn = await getInvoke();
+    return fn("engine_call", {
+      method: "set_settings",
+      params: { key, value },
     });
   },
 

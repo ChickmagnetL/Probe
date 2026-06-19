@@ -19,6 +19,8 @@ export interface SessionBuild {
   agent_role: string | null;
   cli_version: string | null;
   start_time: string | null;
+  cwd: string | null;
+  title: string | null;
   events: JSONDict[];
   telemetry: JSONDict[];
   lifecycle: JSONDict[];
@@ -43,6 +45,8 @@ export function createSession(session_id: string): SessionBuild {
     agent_role: null,
     cli_version: null,
     start_time: null,
+    cwd: null,
+    title: null,
     events: [],
     telemetry: [],
     lifecycle: [],
@@ -168,6 +172,8 @@ export function sessionPayload(
     cli_version: session.cli_version,
     start_time: startTime,
     end_time: endTime,
+    cwd: session.cwd,
+    title: session.title,
     own_metrics: ownMetrics,
     metrics: aggregateMetrics,
     events: ownEvents,

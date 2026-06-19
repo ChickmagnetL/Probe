@@ -15,6 +15,9 @@ import type {
   SessionMetrics,
   SessionEvent,
   GraphTurn,
+  Settings,
+  ScanResult,
+  ImportBatchResult,
 } from "./ipc/types";
 
 // ── In-memory store ─────────────────────────────────────
@@ -22,6 +25,9 @@ import type {
 let currentSummary: JSONDict | null = null;
 let rawFileContents: Map<string, string> = new Map();
 let pendingFiles: Array<{ path: string; content: string }> = [];
+
+// In-memory settings (browser mode). Mirrors the engine KV store.
+const mockSettings: Settings = {};
 
 function getSessions(): SessionRow[] {
   if (!currentSummary) return [];
@@ -43,6 +49,8 @@ function sessionSummaryToRow(s: JSONDict): SessionRow {
     start_time: (s.start_time as string) ?? null,
     end_time: (s.end_time as string) ?? null,
     imported_at: new Date().toISOString(),
+    title: (s.title as string) ?? null,
+    cwd: (s.cwd as string) ?? null,
   };
 }
 
@@ -124,6 +132,8 @@ function toSessionSummary(s: JSONDict): SessionSummary {
     cli_version: (s.cli_version as string) ?? null,
     start_time: (s.start_time as string) ?? null,
     end_time: (s.end_time as string) ?? null,
+    cwd: (s.cwd as string) ?? null,
+    title: (s.title as string) ?? null,
     own_metrics: s.own_metrics as SessionMetrics,
     metrics: s.metrics as SessionMetrics,
     events: (s.events as SessionEvent[]) ?? [],
@@ -231,6 +241,54 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
 
       case "delete_sessions": {
         return { deleted_sessions: 0, deleted_files: 0 } as T;
+      }
+
+      case "get_settings": {
+        const home = "/home/user";
+        return {
+          ...mockSettings,
+          default_codex_path: `${home}/.codex`,
+        } as T;
+      }
+
+      case "set_settings": {
+        const key = methodParams.key as string;
+        const value = methodParams.value as string | number | boolean;
+        if (!key) throw new Error("key is required");
+        mockSettings[key] = typeof value === "string" ? value : String(value);
+        return { key, value } as T;
+      }
+
+      case "scan_codex_sessions": {
+        // Browser mode has no filesystem; report whatever has been loaded as
+        // "already imported" so the progress bar short-circuits cleanly.
+        const total = rawFileContents.size;
+        const result: ScanResult = {
+          total,
+          pending: [],
+          pending_count: 0,
+          skipped: total,
+        };
+        return result as T;
+      }
+
+      case "import_files_batch": {
+        // No real files in browser mode; return an empty successful batch.
+        const empty: ImportBatchResult = {
+          parsed_files: 0,
+          imported_session_count: 0,
+          root_session_count: 0,
+          sessions_count: 0,
+          sessions: [],
+          root_sessions: [],
+          parsed_records: 0,
+          parse_errors: 0,
+          unknown_record_count: 0,
+          unknown_route_keys: [],
+          table_counts: {},
+          errors: [],
+        };
+        return empty as T;
       }
     }
   }

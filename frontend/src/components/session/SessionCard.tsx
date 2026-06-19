@@ -31,7 +31,7 @@ export const SessionCard = memo(function SessionCard({
   session, isActive, selected, selectionMode, onClick, onToggleSelect, cardRef,
   depth, hasChildren, isExpanded, onToggleExpand,
 }: SessionCardProps) {
-  const label = session.agent_nickname ?? session.file_name ?? session.id;
+  const label = session.title ?? session.agent_nickname ?? session.file_name ?? session.id;
   const ts = session.start_time ?? session.imported_at;
   const dotColor = roleAccent(session.agent_role);
   const indent = depth ? depth * 16 : 0;

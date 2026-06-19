@@ -79,6 +79,8 @@ class SessionBuild:
     agent_role: str | None = None
     cli_version: str | None = None
     start_time: str | None = None
+    cwd: str | None = None
+    title: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     telemetry: list[dict[str, Any]] = field(default_factory=list)
     lifecycle: list[dict[str, Any]] = field(default_factory=list)
@@ -95,6 +97,7 @@ def build_summary(buffers: ExtractionBuffers) -> dict[str, Any]:
     _attach_source_records(sessions, raw_record_lookup)
     _link_guardian_sessions_to_review_targets(sessions)
     _ensure_synthetic_roots(sessions)
+    _derive_session_titles(sessions)
 
     flat_sessions = [
         _serialize_imported_session(sessions[session_id], sessions)
@@ -176,6 +179,7 @@ def _seed_sessions(
         session.start_time = _string(row.get("conversation_started_at")) or _string(
             row.get("timestamp")
         )
+        session.cwd = _string(row.get("cwd"))
 
     for file_row in buffers.file_manifest:
         source_path = _string(file_row.get("source_path"))
@@ -477,6 +481,8 @@ def _session_payload(
         "cli_version": session.cli_version,
         "start_time": start_time,
         "end_time": end_time,
+        "cwd": session.cwd,
+        "title": session.title,
         "own_metrics": own_metrics,
         "metrics": aggregate_metrics,
         "events": own_events,
@@ -1611,6 +1617,44 @@ def _truncate(text: str, limit: int) -> str:
     if len(normalized) <= limit:
         return normalized
     return normalized[: limit - 1] + "…"
+
+
+_TITLE_LIMIT = 60
+
+
+def _derive_session_titles(sessions: dict[str, SessionBuild]) -> None:
+    """Set `title` to the first real user_input content for non-subagent sessions.
+
+    Subagent sessions (those with an agent_nickname) keep their existing display
+    behavior and leave `title` as None. The "first real" user input skips
+    auxiliary inputs such as AGENTS.md instructions and environment context —
+    reuse `_looks_like_aux_input` for that filter.
+    """
+    for session in sessions.values():
+        if session.is_synthetic:
+            continue
+        if session.agent_nickname:
+            # Subagents keep their nickname-based display; do not override.
+            continue
+        if session.title:
+            continue
+        session.title = _first_user_input_title(session)
+
+
+def _first_user_input_title(session: SessionBuild) -> str | None:
+    candidates = [
+        event
+        for event in session.events
+        if _string(event.get("kind")) == "user_input"
+        and not _looks_like_aux_input(event)
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=_event_sort_key)
+    content = _string(candidates[0].get("content"))
+    if not content:
+        return None
+    return _truncate(content, _TITLE_LIMIT) or None
 
 
 def _string(value: Any) -> str | None:

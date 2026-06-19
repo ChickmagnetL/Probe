@@ -58,6 +58,8 @@ export interface SessionSummary {
   cli_version: string | null;
   start_time: string | null;
   end_time: string | null;
+  cwd: string | null;
+  title: string | null;
   own_metrics: SessionMetrics;
   metrics: SessionMetrics;
   events: SessionEvent[];
@@ -98,6 +100,8 @@ export interface SessionRow {
   start_time: string | null;
   end_time: string | null;
   imported_at: string;
+  title: string | null;
+  cwd: string | null;
 }
 
 export interface EventRow {
@@ -178,4 +182,50 @@ export interface ListSessionsParams {
 export interface ListSessionsResult {
   sessions: SessionRow[];
   total: number;
+}
+
+// ── Settings (engine KV store) ─────────────────────────
+
+export interface Settings {
+  /** Configured Codex CLI sessions root path (may be absent). */
+  codex_path?: string;
+  /** OS-default Codex path, present when the engine can infer one. */
+  default_codex_path?: string;
+  [key: string]: string | undefined;
+}
+
+export interface SetSettingsParams {
+  key: string;
+  value: string | number | boolean;
+}
+
+// ── Incremental scan / batch import ────────────────────
+
+export interface PendingFile {
+  path: string;
+  mtime: number;
+  size: number;
+}
+
+export interface ScanResult {
+  total: number;
+  pending: PendingFile[];
+  pending_count: number;
+  skipped: number;
+}
+
+export interface ImportBatchResult {
+  /** Number of files parsed in this batch (drives the progress bar numerator). */
+  parsed_files: number;
+  imported_session_count: number;
+  root_session_count: number;
+  sessions_count: number;
+  sessions: SessionSummary[];
+  root_sessions: SessionSummary[];
+  parsed_records: number;
+  parse_errors: number;
+  unknown_record_count: number;
+  unknown_route_keys: string[];
+  table_counts: Record<string, number>;
+  errors: { path: string; message: string }[];
 }

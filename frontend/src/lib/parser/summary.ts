@@ -1,5 +1,5 @@
 import type { JSONDict, ExtractionBuffers } from "./models";
-import { stringOrNull, sortKeyFromTimestamp } from "./summary-helpers";
+import { stringOrNull, sortKeyFromTimestamp, looksLikeAuxInput, eventSortKey } from "./summary-helpers";
 import {
   type SessionBuild,
   createSession,
@@ -74,6 +74,7 @@ function seedSessions(
     session.cli_version = stringOrNull(row.cli_version);
     session.start_time = stringOrNull(row.conversation_started_at)
       ?? stringOrNull(row.timestamp);
+    session.cwd = stringOrNull(row.cwd);
   }
 }
 
@@ -284,9 +285,40 @@ function messageKind(role: string | null, phase: string | null): string {
 }
 
 function truncate(text: string, limit: number): string {
-  const normalized = text.split(/\s+/).join(" ");
+  const normalized = text.trim().split(/\s+/).join(" ");
   if (normalized.length <= limit) return normalized;
   return normalized.slice(0, limit - 1) + "…";
+}
+
+const TITLE_LIMIT = 60;
+
+function deriveSessionTitles(sessions: Map<string, SessionBuild>): void {
+  for (const session of sessions.values()) {
+    if (session.is_synthetic) continue;
+    if (session.agent_nickname) continue; // subagents keep nickname display
+    if (session.title) continue;
+    session.title = firstUserInputTitle(session);
+  }
+}
+
+function firstUserInputTitle(session: SessionBuild): string | null {
+  const candidates = session.events
+    .filter((e) => stringOrNull(e.kind) === "user_input" && !looksLikeAuxInput(e))
+    .sort((a, b) => {
+      const ak = eventSortKey(a as Record<string, unknown>);
+      const bk = eventSortKey(b as Record<string, unknown>);
+      // Mirror Python _event_sort_key: 4-tuple (timestamp, line_no, order, id).
+      for (let i = 0; i < ak.length; i++) {
+        const cmp = ak[i] < bk[i] ? -1 : ak[i] > bk[i] ? 1 : 0;
+        if (cmp !== 0) return cmp;
+      }
+      return 0;
+    });
+  if (candidates.length === 0) return null;
+  const content = stringOrNull(candidates[0].content);
+  if (!content) return null;
+  const title = truncate(content, TITLE_LIMIT);
+  return title || null;
 }
 
 function jsonishText(value: unknown): string | null {
@@ -501,6 +533,7 @@ export function buildSummary(buffers: ExtractionBuffers): JSONDict {
   collectCollaborationMetadata(buffers, sessions);
   collectEvents(buffers, sessions);
   ensureSyntheticRoots(sessions);
+  deriveSessionTitles(sessions);
 
   const flatSessions = sortedImportedSessionIds(sessions)
     .map((id) => serializeImportedSession(sessions.get(id)!, sessions));

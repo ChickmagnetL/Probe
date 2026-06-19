@@ -9,8 +9,9 @@ from typing import Any
 def upsert(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
     conn.execute(
         """INSERT INTO sessions (id, source_path, file_name, parent_session_id,
-               is_subagent, agent_nickname, agent_role, start_time, end_time)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               is_subagent, agent_nickname, agent_role, start_time, end_time,
+               title, cwd)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
                source_path=excluded.source_path,
                file_name=excluded.file_name,
@@ -19,7 +20,9 @@ def upsert(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
                agent_nickname=excluded.agent_nickname,
                agent_role=excluded.agent_role,
                start_time=excluded.start_time,
-               end_time=excluded.end_time""",
+               end_time=excluded.end_time,
+               title=excluded.title,
+               cwd=excluded.cwd""",
         (
             session["id"],
             session.get("source_path"),
@@ -30,6 +33,8 @@ def upsert(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
             session.get("agent_role"),
             session.get("start_time"),
             session.get("end_time"),
+            session.get("title"),
+            session.get("cwd"),
         ),
     )
 
@@ -52,7 +57,7 @@ def list_sessions(
     filter_text: str | None = None,
     sort_by: str = "imported_at",
     sort_order: str = "desc",
-    limit: int = 100,
+    limit: int = 5000,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
     where_clauses: list[str] = []

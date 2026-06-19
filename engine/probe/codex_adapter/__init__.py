@@ -41,13 +41,13 @@ def _extract_buffers(input_path: str | Path) -> ExtractionBuffers:
     return buffers
 
 
-def parse_codex_rollout(input_path: str | Path) -> dict[str, Any]:
+def parse_codex_rollout(input_path: str | Path | list[str | Path]) -> dict[str, Any]:
     buffers = _extract_buffers(input_path)
     return build_summary(buffers)
 
 
 def run_codex_rollout_demo(
-    input_path: str | Path,
+    input_path: str | Path | list[str | Path],
     output_dir: str | Path,
 ) -> dict[str, Any]:
     buffers = _extract_buffers(input_path)
