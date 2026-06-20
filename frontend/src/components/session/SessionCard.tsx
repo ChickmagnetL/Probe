@@ -7,15 +7,19 @@ interface SessionCardProps {
   isActive: boolean;
   selected: boolean;
   selectionMode: boolean;
-  onClick: () => void;
-  onToggleSelect: () => void;
-  cardRef?: (el: HTMLDivElement | null) => void;
+  // Stable, id-agnostic callbacks. The card resolves its own session id and
+  // branches on click context, so callers MUST NOT pre-bind inline arrows
+  // (those would break memo by changing identity every render).
+  onSelect: (id: string) => void;
+  onToggleSelect: (id: string) => void;
+  onSetExpanded: (id: string, expanded: boolean) => void;
+  registerCardRef: (id: string, el: HTMLDivElement | null) => void;
   depth?: number;
   hasChildren?: boolean;
   isExpanded?: boolean;
-  onToggleExpand?: () => void;
 }
 
+// Main-session accent dots: explicit colors for the four canonical roles.
 function roleAccent(role: string | null | undefined): string {
   if (!role) return "bg-muted-foreground";
   switch (role.toLowerCase()) {
@@ -27,19 +31,83 @@ function roleAccent(role: string | null | undefined): string {
   }
 }
 
+// Subagent accent dots: colorful (never grey). Well-known roles get fixed
+// colors; unknown agent_roles get a deterministic palette slot via string
+// hash so the same role always maps to the same color.
+const SUBAGENT_ROLE_COLORS: Record<string, string> = {
+  guardian: "#EC4899",   // pink
+  research: "#06B6D4",   // cyan
+  implement: "#10B981",  // green
+  check: "#F59E0B",      // amber
+};
+const SUBAGENT_PALETTE = [
+  "#8B5CF6", // violet (also the default for role-less subagents)
+  "#EC4899", // pink
+  "#06B6D4", // cyan
+  "#10B981", // green
+  "#F59E0B", // amber
+  "#3B82F6", // blue
+  "#EF4444", // red
+  "#14B8A6", // teal
+];
+const SUBAGENT_DEFAULT_COLOR = "#8B5CF6";
+
+function subagentAccentColor(role: string | null | undefined): string {
+  if (!role) return SUBAGENT_DEFAULT_COLOR;
+  const key = role.toLowerCase();
+  if (SUBAGENT_ROLE_COLORS[key]) return SUBAGENT_ROLE_COLORS[key];
+  // Deterministic hash → palette slot. Same role string → same color.
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  const idx = Math.abs(hash) % SUBAGENT_PALETTE.length;
+  return SUBAGENT_PALETTE[idx];
+}
+
 export const SessionCard = memo(function SessionCard({
-  session, isActive, selected, selectionMode, onClick, onToggleSelect, cardRef,
-  depth, hasChildren, isExpanded, onToggleExpand,
+  session, isActive, selected, selectionMode,
+  onSelect, onToggleSelect, onSetExpanded, registerCardRef,
+  depth, hasChildren, isExpanded,
 }: SessionCardProps) {
   const label = session.title ?? session.agent_nickname ?? session.file_name ?? session.id;
   const ts = session.start_time ?? session.imported_at;
-  const dotColor = roleAccent(session.agent_role);
+  const isSubagent = depth !== undefined && depth > 0;
+  // Main-session rows use the Tailwind class accent map; subagent rows get a
+  // colorful inline-style dot keyed off the agent_role.
+  const dotClassName = isSubagent ? "" : roleAccent(session.agent_role);
+  const dotStyle = isSubagent
+    ? { backgroundColor: subagentAccentColor(session.agent_role) }
+    : undefined;
   const indent = depth ? depth * 16 : 0;
+
+  // Click behavior for rows with subagent children (hasChildren):
+  //   - inactive click → open detail AND expand children
+  //   - active re-click → toggle children expand (no detail re-fetch)
+  // Rows without children: click just opens the detail. The dedicated arrow
+  // button still does a pure toggle (it stops propagation in the card).
+  const handleClick = () => {
+    if (hasChildren) {
+      if (isActive) {
+        onSetExpanded(session.id, !isExpanded);
+      } else {
+        onSelect(session.id);
+        onSetExpanded(session.id, true);
+      }
+    } else {
+      onSelect(session.id);
+    }
+  };
+
+  const handleArrowToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSetExpanded(session.id, !isExpanded);
+  };
 
   return (
     <div
-      ref={cardRef}
-      onClick={selectionMode ? onToggleSelect : onClick}
+      ref={(el) => registerCardRef(session.id, el)}
+      onClick={selectionMode ? () => onToggleSelect(session.id) : handleClick}
       className={`group relative z-10 w-full text-left rounded-lg px-3 py-2.5 cursor-pointer transition-colors duration-150 border ${
         selected
           ? "border-primary/30 bg-primary/5"
@@ -53,7 +121,7 @@ export const SessionCard = memo(function SessionCard({
         {/* Expand/collapse arrow */}
         {hasChildren && !selectionMode && (
           <button
-            onClick={(e) => { e.stopPropagation(); onToggleExpand?.(); }}
+            onClick={handleArrowToggle}
             className="mt-0.5 shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-muted transition-colors"
             type="button"
             aria-label={isExpanded ? "Collapse children" : "Expand children"}
@@ -72,7 +140,7 @@ export const SessionCard = memo(function SessionCard({
         {selectionMode && (
           <div className="mt-0.5 shrink-0">
             <button
-              onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+              onClick={(e) => { e.stopPropagation(); onToggleSelect(session.id); }}
               className="w-4 h-4 rounded border-[1.5px] flex items-center justify-center transition-colors"
               style={{
                 borderColor: selected ? 'var(--color-primary)' : '#94a3b8',
@@ -89,7 +157,7 @@ export const SessionCard = memo(function SessionCard({
             </button>
           </div>
         )}
-        <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+        <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${dotClassName}`} style={dotStyle} />
         <div className="min-w-0 flex-1">
           <div className={`text-sm font-medium truncate leading-tight transition-colors duration-150 ${isActive ? "text-on-primary" : "text-card-foreground group-hover:text-foreground"}`}>
             {label}

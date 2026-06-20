@@ -24,7 +24,6 @@ interface SessionState {
 
   // Tree nesting
   expandedSessions: Set<string>;
-  toggleExpand: (sessionId: string) => void;
   setExpanded: (sessionId: string, expanded: boolean) => void;
 
   // Multi-select
@@ -57,14 +56,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   expandedSessions: new Set<string>(),
   selectedIds: new Set(),
   selectionMode: false,
-
-  toggleExpand: (sessionId) => {
-    const { expandedSessions } = get();
-    const next = new Set(expandedSessions);
-    if (next.has(sessionId)) next.delete(sessionId);
-    else next.add(sessionId);
-    set({ expandedSessions: next });
-  },
 
   setExpanded: (sessionId, expanded) => {
     const { expandedSessions } = get();

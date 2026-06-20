@@ -1,9 +1,11 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { useSessionStore } from "../../stores/session";
 import { SessionCard } from "./SessionCard";
-import { ProjectGroup } from "./ProjectGroup";
+import { ProjectFolder } from "./ProjectFolder";
+import { DateBucket } from "./DateBucket";
 import { EmptyState } from "../shared/EmptyState";
 import { SkeletonLines } from "../shared/SkeletonLines";
+import { formatRelative } from "../../lib/format";
 import type { SessionRow } from "../../ipc/types";
 
 interface TreeItem {
@@ -22,6 +24,34 @@ interface SessionListProps {
 const UNKNOWN_GROUP_KEY = "__unknown__";
 const UNKNOWN_GROUP_NAME = "Unknown";
 
+// Date bucket order (newest first). Sessions fall into the first matching
+// bucket based on their start_time vs the current calendar day. "本周" uses a
+// rolling 7-day window excluding 今天/昨天 — simple and intuitive enough.
+type BucketKey = "today" | "yesterday" | "this_week" | "older";
+const BUCKET_ORDER: BucketKey[] = ["today", "yesterday", "this_week", "older"];
+const BUCKET_LABELS: Record<BucketKey, string> = {
+  today: "今天",
+  yesterday: "昨天",
+  this_week: "本周",
+  older: "更早",
+};
+
+function startOfDay(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+function bucketFor(startIso: string | null, now: Date): BucketKey {
+  if (!startIso) return "older";
+  const then = new Date(startIso).getTime();
+  if (Number.isNaN(then)) return "older";
+  const todayStart = startOfDay(now);
+  const dayMs = 86_400_000;
+  if (then >= todayStart) return "today";
+  if (then >= todayStart - dayMs) return "yesterday";
+  if (then >= todayStart - 7 * dayMs) return "this_week";
+  return "older";
+}
+
 function groupKeyFor(session: SessionRow): string {
   return session.cwd ?? UNKNOWN_GROUP_KEY;
 }
@@ -33,11 +63,17 @@ function groupNameFor(key: string): string {
   return parts.length > 0 ? parts[parts.length - 1] : UNKNOWN_GROUP_NAME;
 }
 
+interface BucketData {
+  key: BucketKey;
+  label: string;
+  roots: TreeItem[];
+}
+
 interface ProjectGroupData {
   key: string;
   name: string;
   fullPath: string | null;
-  roots: TreeItem[];
+  buckets: BucketData[];
   latestStart: string;
   totalSessions: number;
 }
@@ -50,15 +86,55 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
   const selectionMode = useSessionStore((s) => s.selectionMode);
   const activeId = useSessionStore((s) => s.activeSessionId);
   const expandedSessions = useSessionStore((s) => s.expandedSessions);
-  const toggleExpand = useSessionStore((s) => s.toggleExpand);
+  const setExpanded = useSessionStore((s) => s.setExpanded);
 
-  // Collapsed project groups — local state, default all expanded.
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const toggleGroup = useCallback((key: string) => {
-    setCollapsedGroups((prev) => {
+  // Expanded project folders — local state, default empty = all collapsed.
+  // Using an "expanded" set (not "collapsed") so data-driven project keys
+  // default to collapsed without needing to know them ahead of time.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // Expanded date buckets, keyed by `${cwdKey}::${bucketKey}`. Default empty.
+  const [expandedBuckets, setExpandedBuckets] = useState<Set<string>>(new Set());
+
+  // Find the first non-empty bucket key for a group (BUCKET_ORDER is newest
+  // first), or null if the group has no buckets.
+  const firstNonEmptyBucket = useCallback((group: ProjectGroupData): BucketKey | null => {
+    for (const bucket of group.buckets) {
+      if (bucket.roots.length > 0) return bucket.key;
+    }
+    return null;
+  }, []);
+
+  const toggleGroup = useCallback((group: ProjectGroupData) => {
+    const isCurrentlyExpanded = expandedGroups.has(group.key);
+    setExpandedGroups((prevExpanded) => {
+      const nextExpanded = new Set(prevExpanded);
+      if (isCurrentlyExpanded) nextExpanded.delete(group.key);
+      else nextExpanded.add(group.key);
+      return nextExpanded;
+    });
+    setExpandedBuckets((prevBuckets) => {
+      const nextBuckets = new Set(prevBuckets);
+      const prefix = `${group.key}::`;
+      if (isCurrentlyExpanded) {
+        // Collapsing: clear this group's bucket entries to avoid stale residue.
+        for (const k of nextBuckets) {
+          if (k.startsWith(prefix)) nextBuckets.delete(k);
+        }
+      } else {
+        // Expanding: auto-expand the first non-empty bucket so the most
+        // recent date bucket is immediately visible.
+        const firstBucket = firstNonEmptyBucket(group);
+        if (firstBucket) nextBuckets.add(`${prefix}${firstBucket}`);
+      }
+      return nextBuckets;
+    });
+  }, [expandedGroups, firstNonEmptyBucket]);
+
+  const toggleBucket = useCallback((bucketKey: string) => {
+    setExpandedBuckets((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(bucketKey)) next.delete(bucketKey);
+      else next.add(bucketKey);
       return next;
     });
   }, []);
@@ -105,8 +181,9 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
     return buildTree(roots, 0);
   }, [sessions]);
 
-  // Group root-level tree items by cwd.
+  // Group root-level tree items by cwd, then split each group into date buckets.
   const groups = useMemo((): ProjectGroupData[] => {
+    const now = new Date();
     const byKey = new Map<string, TreeItem[]>();
     for (const item of tree) {
       const key = groupKeyFor(item.session);
@@ -114,20 +191,34 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
       if (list) list.push(item);
       else byKey.set(key, [item]);
     }
-    // Root items within a group are already sorted newest-first (tree sort).
-    // Build group list with latest start time per group.
+
     const groupList: ProjectGroupData[] = [];
     for (const [key, items] of byKey) {
       let latest = "";
+      const byBucket = new Map<BucketKey, TreeItem[]>();
       for (const item of items) {
         const t = item.session.start_time ?? "";
         if (t > latest) latest = t;
+        const bk = bucketFor(item.session.start_time, now);
+        const list = byBucket.get(bk);
+        if (list) list.push(item);
+        else byBucket.set(bk, [item]);
       }
+
+      const buckets: BucketData[] = [];
+      for (const bk of BUCKET_ORDER) {
+        const roots = byBucket.get(bk);
+        if (roots && roots.length > 0) {
+          // roots are already sorted newest-first (from tree sort).
+          buckets.push({ key: bk, label: BUCKET_LABELS[bk], roots });
+        }
+      }
+
       groupList.push({
         key,
         name: groupNameFor(key),
         fullPath: key === UNKNOWN_GROUP_KEY ? null : key,
-        roots: items,
+        buckets,
         latestStart: latest,
         totalSessions: items.length,
       });
@@ -137,7 +228,7 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
     return groupList;
   }, [tree]);
 
-  // Flatten into visible rows respecting expanded sessions + collapsed groups.
+  // Flatten into visible rows (used only for indicator re-measure triggers).
   const visibleItems = useMemo((): TreeItem[] => {
     const result: TreeItem[] = [];
     function collect(items: TreeItem[]) {
@@ -148,75 +239,105 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
         }
       }
     }
+    if (selectionMode) {
+      for (const group of groups) collect(group.buckets.flatMap((b) => b.roots));
+      return result;
+    }
     for (const group of groups) {
-      const collapsed = !selectionMode && collapsedGroups.has(group.key);
-      if (!collapsed) collect(group.roots);
+      if (!expandedGroups.has(group.key)) continue;
+      for (const bucket of group.buckets) {
+        const bkey = `${group.key}::${bucket.key}`;
+        if (!expandedBuckets.has(bkey)) continue;
+        collect(bucket.roots);
+      }
     }
     return result;
-  }, [groups, expandedSessions, collapsedGroups, selectionMode]);
+  }, [groups, expandedSessions, expandedGroups, expandedBuckets, selectionMode]);
 
-  // Sliding indicator state
+  // Sliding indicator state — positioned via getBoundingClientRect relative
+  // to the scroll container, which stays robust across the 3-level nesting
+  // (project folder + date bucket headers + session card). offsetTop would
+  // break if any intermediate container gained `position: relative`.
   const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const setCardRef = useCallback((id: string, el: HTMLDivElement | null) => {
+  // Stable, id-agnostic callback used as the SessionCard ref. Renamed from
+  // setCardRef → registerCardRef to match the card's new prop contract; the
+  // card resolves its own session.id so callers never pre-bind inline arrows
+  // (those would break SessionCard's memo by changing identity every render).
+  const registerCardRef = useCallback((id: string, el: HTMLDivElement | null) => {
     if (el) cardRefs.current.set(id, el);
     else cardRefs.current.delete(id);
   }, []);
 
-  // Render a tree item and, if expanded, its children recursively. Children
-  // stay inside the same project group as their root (subagents inherit the
-  // root's cwd grouping), preserving the indented tree across group renders.
-  const renderTree = useCallback((item: TreeItem) => {
-    const nodes: React.ReactNode[] = [
+  // Render a tree item plus its subagent children. Children are rendered
+  // conditionally (mounted when expanded, unmounted when collapsed) — no
+  // transition, instant show/hide.
+  //
+  // All callbacks handed to SessionCard are stable references (store actions
+  // or useCallback'd helpers). The card branches on its own session.id and
+  // click context, so this render fn must NOT wrap them in inline arrows —
+  // doing so would re-create the prop every render and defeat SessionCard's
+  // memo, forcing every visible card to re-render on expand/collapse.
+  const renderTree = useCallback((item: TreeItem): React.ReactNode => {
+    const isActive = item.session.id === activeId;
+    const hasChildren = item.children.length > 0;
+    const isOpen = expandedSessions.has(item.session.id);
+    return [
       <SessionCard
         key={item.session.id}
         session={item.session}
-        isActive={item.session.id === activeId}
+        isActive={isActive}
         selected={selectedIds.has(item.session.id)}
         selectionMode={selectionMode}
-        onClick={() => onSessionSelect(item.session.id)}
-        onToggleSelect={() => toggleSelect(item.session.id)}
-        cardRef={(el) => setCardRef(item.session.id, el)}
+        onSelect={onSessionSelect}
+        onToggleSelect={toggleSelect}
+        onSetExpanded={setExpanded}
+        registerCardRef={registerCardRef}
         depth={item.depth}
-        hasChildren={item.children.length > 0}
-        isExpanded={expandedSessions.has(item.session.id)}
-        onToggleExpand={() => toggleExpand(item.session.id)}
+        hasChildren={hasChildren}
+        isExpanded={isOpen}
       />,
+      hasChildren && isOpen
+        ? item.children.map((child) => renderTree(child))
+        : null,
     ];
-    if (item.children.length > 0 && expandedSessions.has(item.session.id)) {
-      for (const child of item.children) nodes.push(renderTree(child));
-    }
-    return nodes;
-  }, [activeId, selectedIds, selectionMode, expandedSessions, toggleSelect, toggleExpand, onSessionSelect, setCardRef]);
+  }, [activeId, selectedIds, selectionMode, expandedSessions, toggleSelect, setExpanded, onSessionSelect, registerCardRef]);
 
-  // Measure indicator position after paint to avoid blocking the animation start.
-  // offsetTop is relative to offsetParent (the scroll container), so group
-  // header DOM interleaved between cards does not invalidate the measurement.
+  // Measure indicator after paint. When the active card is hidden — either
+  // because its project folder / date bucket is collapsed (card unmounts,
+  // ref disappears) or because it lives inside a collapsed subagent block
+  // (card unmounts, ref disappears) — clear the indicator. Expanding the
+  // block re-mounts the card and this effect re-runs (visibleItems depends
+  // on expandedSessions) to restore the indicator at the correct offset.
   useEffect(() => {
     if (!activeId) { setIndicator(null); return; }
     const raf = requestAnimationFrame(() => {
       const el = cardRefs.current.get(activeId);
-      // Active card may be hidden (e.g. its project group is collapsed) —
-      // the card unmounts and setCardRef(null) removes it from the map.
-      // Clear the indicator so it doesn't stick at the stale offset and
-      // visually clip / push apart rows below. Re-expanding the group
-      // re-measures and restores the indicator.
-      if (el) setIndicator({ top: el.offsetTop, height: el.offsetHeight });
-      else setIndicator(null);
+      const scroll = scrollRef.current;
+      if (!el || !scroll) { setIndicator(null); return; }
+      if (el.offsetHeight === 0) { setIndicator(null); return; }
+      const elRect = el.getBoundingClientRect();
+      if (elRect.height === 0) { setIndicator(null); return; }
+      const scrollRect = scroll.getBoundingClientRect();
+      setIndicator({
+        top: elRect.top - scrollRect.top + scroll.scrollTop,
+        height: el.offsetHeight,
+      });
     });
     return () => cancelAnimationFrame(raf);
   }, [activeId, visibleItems]);
 
   // Content exists as long as there are project groups. Collapsed groups
-  // still render their headers (so the user can re-expand), so do not gate
-  // the empty state on visibleItems — that would hide every group when all
-  // are folded and wrongly show "No sessions".
+  // still render their folder headers, so do not gate the empty state on
+  // visibleItems — otherwise folding every group would wrongly show "No
+  // sessions".
   const hasContent = groups.length > 0;
 
   return (
     <div className="flex flex-1 flex-col min-h-0">
-      <div className="relative flex-1 overflow-y-auto p-3 space-y-0.5">
+      <div ref={scrollRef} className="relative flex-1 overflow-y-auto p-3 space-y-0.5">
         {/* Sliding indicator */}
         {indicator && (
           <div
@@ -238,23 +359,44 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
           />
         ) : (
           groups.map((group) => {
-            const collapsed = !selectionMode && collapsedGroups.has(group.key);
-            // In selection mode: hide group header so the multi-select surface
-            // stays flat (consistent with how subagent expand arrows hide),
-            // and ignore per-group collapse so every session stays reachable
-            // for batch select / delete (no "lost" rows behind a folded group).
+            const collapsed = !selectionMode && !expandedGroups.has(group.key);
+            // In selection mode: hide project/bucket headers so the
+            // multi-select surface stays flat (consistent with how subagent
+            // expand arrows hide), and ignore collapse so every session stays
+            // reachable for batch select / delete.
             return (
               <div key={group.key}>
                 {!selectionMode && (
-                  <ProjectGroup
+                  <ProjectFolder
                     name={group.name}
                     fullPath={group.fullPath}
-                    collapsed={collapsedGroups.has(group.key)}
+                    collapsed={collapsed}
                     count={group.totalSessions}
-                    onToggle={() => toggleGroup(group.key)}
+                    latestRelative={group.latestStart ? formatRelative(group.latestStart) : null}
+                    onToggle={() => toggleGroup(group)}
                   />
                 )}
-                {!collapsed && group.roots.flatMap((item) => renderTree(item))}
+                {!collapsed && (
+                  <div className="ml-3.5 pl-3.5 border-l border-dashed border-border">
+                    {group.buckets.map((bucket) => {
+                      const bkey = `${group.key}::${bucket.key}`;
+                      const bucketCollapsed = !selectionMode && !expandedBuckets.has(bkey);
+                      return (
+                        <div key={bkey}>
+                          {!selectionMode && (
+                            <DateBucket
+                              label={bucket.label}
+                              collapsed={bucketCollapsed}
+                              count={bucket.roots.length}
+                              onToggle={() => toggleBucket(bkey)}
+                            />
+                          )}
+                          {!bucketCollapsed && bucket.roots.flatMap((item) => renderTree(item))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })
