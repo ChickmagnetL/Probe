@@ -258,7 +258,7 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
   // to the scroll container, which stays robust across the 3-level nesting
   // (project folder + date bucket headers + session card). offsetTop would
   // break if any intermediate container gained `position: relative`.
-  const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
+  const [indicator, setIndicator] = useState<{ top: number; height: number; left: number; right: number } | null>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -300,7 +300,21 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
         isExpanded={isOpen}
       />,
       hasChildren && isOpen
-        ? item.children.map((child) => renderTree(child))
+        ? (
+          // Wrap direct sub-agent children in an indented container with a
+          // left dashed border. This shifts the entire sub-agent subtree box
+          // to the right (so the row backgrounds/hover regions are visibly
+          // inset under the parent main agent) AND draws the vertical tree
+          // guide line down the side of the group. `ml-5` sets the indent
+          // (larger than a row's own padding); `pl-3` creates a breathing
+          // gap between the dashed border and the child row boxes (so they
+          // don't visually touch the line). Multi-level nesting composes:
+          // each TreeItem wraps its own children the same way, so sub-sub-
+          // agents get another ml-5 + pl-3 + dashed border layer.
+          <div key={`${item.session.id}__children`} className="ml-5 pl-3 border-l border-dashed border-border">
+            {item.children.map((child) => renderTree(child))}
+          </div>
+        )
         : null,
     ];
   }, [activeId, selectedIds, selectionMode, expandedSessions, toggleSelect, setExpanded, onSessionSelect, registerCardRef]);
@@ -324,6 +338,14 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
       setIndicator({
         top: elRect.top - scrollRect.top + scroll.scrollTop,
         height: el.offsetHeight,
+        // Capture the active card's horizontal extents relative to the
+        // scroll container. This makes the sliding indicator track the
+        // card's actual box: full-width for main agents, inset for
+        // sub-agents (whose card lives inside the indented wrapper). Using
+        // fixed left-3/right-3 here would ignore the wrapper indent and
+        // paint the blue box full-width even for sub-agents.
+        left: elRect.left - scrollRect.left,
+        right: scrollRect.right - elRect.right,
       });
     });
     return () => cancelAnimationFrame(raf);
@@ -341,10 +363,12 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
         {/* Sliding indicator */}
         {indicator && (
           <div
-            className="absolute left-3 right-3 rounded-lg bg-primary shadow-md pointer-events-none z-0 transition-all duration-500"
+            className="absolute rounded-lg bg-primary shadow-md pointer-events-none z-0 transition-all duration-500"
             style={{
               top: indicator.top,
               height: indicator.height,
+              left: indicator.left,
+              right: indicator.right,
               transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
             }}
           />
@@ -377,7 +401,7 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
                   />
                 )}
                 {!collapsed && (
-                  <div className="ml-3.5 pl-3.5 border-l border-dashed border-border">
+                  <div>
                     {group.buckets.map((bucket) => {
                       const bkey = `${group.key}::${bucket.key}`;
                       const bucketCollapsed = !selectionMode && !expandedBuckets.has(bkey);

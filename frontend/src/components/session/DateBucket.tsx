@@ -24,7 +24,7 @@ function DateBucketComponent({ label, collapsed, count, onToggle }: DateBucketPr
       }}
       aria-expanded={!collapsed}
       aria-label={collapsed ? `Expand ${label} bucket` : `Collapse ${label} bucket`}
-      className="flex items-center gap-2 pt-1.5 pb-1 mt-1.5 cursor-pointer"
+      className="flex items-center gap-2 pt-1.5 pb-1 mt-1.5 px-1.5 cursor-pointer"
     >
       <span
         className={`inline-flex items-center justify-center text-muted-foreground transition-transform duration-200 ${collapsed ? "" : "rotate-90"}`}

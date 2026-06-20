@@ -79,7 +79,13 @@ export const SessionCard = memo(function SessionCard({
   const dotStyle = isSubagent
     ? { backgroundColor: subagentAccentColor(session.agent_role) }
     : undefined;
-  const indent = depth ? depth * 16 : 0;
+  // Base left padding matches the ProjectFolder header's `px-1.5` (6px) so
+  // every row — main agent or sub-agent — aligns flush within its container.
+  // The sub-agent indent itself is provided by the wrapper div in
+  // SessionList.tsx (ml-4 + dashed left border), NOT by per-row padding, so
+  // that the row's background/hover BOX shifts right as a whole rather than
+  // only the text. `depth` is still used for the subagent accent dot styling.
+  const baseLeftPad = 6;
 
   // Click behavior for rows with subagent children (hasChildren):
   //   - inactive click → open detail AND expand children
@@ -115,7 +121,7 @@ export const SessionCard = memo(function SessionCard({
             ? "hover:bg-primary/10 border-transparent"
             : "hover:bg-muted hover:border-border border-transparent"
       }`}
-      style={{ paddingLeft: `${12 + indent}px` }}
+      style={{ paddingLeft: `${baseLeftPad}px` }}
     >
       <div className="flex items-start gap-3">
         {/* Expand/collapse arrow */}
@@ -159,34 +165,36 @@ export const SessionCard = memo(function SessionCard({
         )}
         <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${dotClassName}`} style={dotStyle} />
         <div className="min-w-0 flex-1">
-          <div className={`text-sm font-medium truncate leading-tight transition-colors duration-150 ${isActive ? "text-on-primary" : "text-card-foreground group-hover:text-foreground"}`}>
-            {label}
-          </div>
-          <div className="mt-1.5 flex items-center gap-2">
-            {session.agent_role && (
-              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase tracking-wider transition-colors duration-150 ${
-                isActive ? "bg-white/15 text-white/80" : "bg-muted text-muted-foreground"
-              }`}>
-                {session.agent_role}
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className={`text-sm font-medium truncate leading-tight transition-colors duration-150 min-w-0 ${isActive ? "text-on-primary" : "text-card-foreground group-hover:text-foreground"}`}>
+                {label}
               </span>
-            )}
-            {session.is_subagent === 1 && (
-              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider transition-colors duration-150 ${
-                isActive ? "bg-white/10 text-white/60" : "bg-muted text-muted-foreground/60"
-              }`}>
-                sub
-              </span>
-            )}
-            <span className={`text-xs transition-colors duration-150 ${isActive ? "text-white/50" : "text-muted-foreground"}`}>{formatRelative(ts)}</span>
+              {session.agent_role && (
+                <span className={`inline-block align-middle px-1 py-0 rounded text-[9px] font-medium uppercase tracking-wider transition-colors duration-150 shrink-0 min-w-0 max-w-[60%] truncate whitespace-nowrap ${
+                  isActive ? "bg-white/15 text-white/80" : "bg-muted text-muted-foreground"
+                }`}>
+                  <span className="block truncate">{session.agent_role}</span>
+                </span>
+              )}
+            </div>
+            <span className={`text-xs transition-colors duration-150 truncate ${isActive ? "text-white/50" : "text-muted-foreground"}`}>{formatRelative(ts)}</span>
           </div>
         </div>
-        {isActive && (
-          <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 mt-0.5">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/60">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </div>
-        )}
+        {/* Active indicator — always rendered (opacity-toggled) so it reserves
+            the same in-flow horizontal space in both inactive and active states.
+            Conditionally mounting it would shrink the name+tag flex line on
+            active and re-truncate both, causing a layout jump on click. */}
+        <div
+          className={`w-5 h-5 rounded flex items-center justify-center shrink-0 mt-0.5 transition-opacity duration-150 ${
+            isActive ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+          aria-hidden={!isActive}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white/60">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </div>
       </div>
     </div>
   );
