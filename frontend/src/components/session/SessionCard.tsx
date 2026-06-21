@@ -125,7 +125,7 @@ export const SessionCard = memo(function SessionCard({
     >
       <div className="flex items-start gap-3">
         {/* Expand/collapse arrow */}
-        {hasChildren && !selectionMode && (
+        {hasChildren && (
           <button
             onClick={handleArrowToggle}
             className="mt-0.5 shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-muted transition-colors"
@@ -142,26 +142,23 @@ export const SessionCard = memo(function SessionCard({
             </svg>
           </button>
         )}
-        {/* Checkbox — only visible in selection mode */}
         {selectionMode && (
-          <div className="mt-0.5 shrink-0">
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleSelect(session.id); }}
-              className="w-4 h-4 rounded border-[1.5px] flex items-center justify-center transition-colors"
-              style={{
-                borderColor: selected ? 'var(--color-primary)' : '#94a3b8',
-                backgroundColor: selected ? 'var(--color-primary)' : 'transparent',
-              }}
-              type="button"
-              aria-label={selected ? "Deselect session" : "Select session"}
-            >
-              {selected && (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </button>
-          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleSelect(session.id); }}
+            className="mt-0.5 shrink-0 w-4 h-4 rounded border-[1.5px] flex items-center justify-center transition-colors"
+            style={{
+              borderColor: selected ? "var(--color-primary)" : "#94a3b8",
+              backgroundColor: selected ? "var(--color-primary)" : "transparent",
+            }}
+            type="button"
+            aria-label={selected ? "Deselect session" : "Select session"}
+          >
+            {selected && (
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+          </button>
         )}
         <div className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${dotClassName}`} style={dotStyle} />
         <div className="min-w-0 flex-1">

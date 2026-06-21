@@ -229,6 +229,9 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
   }, [tree]);
 
   // Flatten into visible rows (used only for indicator re-measure triggers).
+  // Respect project-folder and date-bucket collapse state in both normal and
+  // selection mode so the list keeps the same three-level structure when the
+  // user is picking sessions to delete.
   const visibleItems = useMemo((): TreeItem[] => {
     const result: TreeItem[] = [];
     function collect(items: TreeItem[]) {
@@ -239,10 +242,6 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
         }
       }
     }
-    if (selectionMode) {
-      for (const group of groups) collect(group.buckets.flatMap((b) => b.roots));
-      return result;
-    }
     for (const group of groups) {
       if (!expandedGroups.has(group.key)) continue;
       for (const bucket of group.buckets) {
@@ -252,7 +251,7 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
       }
     }
     return result;
-  }, [groups, expandedSessions, expandedGroups, expandedBuckets, selectionMode]);
+  }, [groups, expandedSessions, expandedGroups, expandedBuckets]);
 
   // Sliding indicator state — positioned via getBoundingClientRect relative
   // to the scroll container, which stays robust across the 3-level nesting
@@ -383,38 +382,30 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
           />
         ) : (
           groups.map((group) => {
-            const collapsed = !selectionMode && !expandedGroups.has(group.key);
-            // In selection mode: hide project/bucket headers so the
-            // multi-select surface stays flat (consistent with how subagent
-            // expand arrows hide), and ignore collapse so every session stays
-            // reachable for batch select / delete.
+            const collapsed = !expandedGroups.has(group.key);
             return (
               <div key={group.key}>
-                {!selectionMode && (
-                  <ProjectFolder
-                    name={group.name}
-                    fullPath={group.fullPath}
-                    collapsed={collapsed}
-                    count={group.totalSessions}
-                    latestRelative={group.latestStart ? formatRelative(group.latestStart) : null}
-                    onToggle={() => toggleGroup(group)}
-                  />
-                )}
+                <ProjectFolder
+                  name={group.name}
+                  fullPath={group.fullPath}
+                  collapsed={collapsed}
+                  count={group.totalSessions}
+                  latestRelative={group.latestStart ? formatRelative(group.latestStart) : null}
+                  onToggle={() => toggleGroup(group)}
+                />
                 {!collapsed && (
                   <div>
                     {group.buckets.map((bucket) => {
                       const bkey = `${group.key}::${bucket.key}`;
-                      const bucketCollapsed = !selectionMode && !expandedBuckets.has(bkey);
+                      const bucketCollapsed = !expandedBuckets.has(bkey);
                       return (
                         <div key={bkey}>
-                          {!selectionMode && (
-                            <DateBucket
-                              label={bucket.label}
-                              collapsed={bucketCollapsed}
-                              count={bucket.roots.length}
-                              onToggle={() => toggleBucket(bkey)}
-                            />
-                          )}
+                          <DateBucket
+                            label={bucket.label}
+                            collapsed={bucketCollapsed}
+                            count={bucket.roots.length}
+                            onToggle={() => toggleBucket(bkey)}
+                          />
                           {!bucketCollapsed && bucket.roots.flatMap((item) => renderTree(item))}
                         </div>
                       );
