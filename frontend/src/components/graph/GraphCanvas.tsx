@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import type { EventRow } from "../../ipc/types";
 import type { GraphData, GraphTurn, ChildSession, GraphNode } from "./graph-layout";
-import { buildGraphFromTurns, buildTurnsFromEvents, graphNodeLabelPadding } from "./graph-layout";
+import { buildGraphFromTurns, buildTurnsFromEvents } from "./graph-layout";
 import {
   renderStaticLayer,
   renderLabels,
@@ -13,6 +13,11 @@ import {
 } from "./graph-renderer";
 import { createInteractionHandlers, type Transform } from "./graph-interaction";
 import { GraphTooltip } from "./GraphTooltip";
+import {
+  computeResetViewTransform,
+  graphBounds,
+  type GraphViewportSize,
+} from "./graph-viewport";
 
 interface GraphCanvasProps {
   graphTurns?: GraphTurn[];
@@ -36,19 +41,6 @@ function sizeCanvasToContainer(
   canvas.height = height * dpr;
   const ctx = canvas.getContext("2d");
   if (ctx) ctx.scale(dpr, dpr);
-}
-
-/** Compute world-space bounding box for graph data */
-function graphBounds(data: GraphData): { minX: number; minY: number; w: number; h: number } {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const n of data.nodes) {
-    const labelPadding = graphNodeLabelPadding(n);
-    if (n.x - labelPadding.left < minX) minX = n.x - labelPadding.left;
-    if (n.y - labelPadding.y < minY) minY = n.y - labelPadding.y;
-    if (n.x + labelPadding.right > maxX) maxX = n.x + labelPadding.right;
-    if (n.y + labelPadding.y > maxY) maxY = n.y + labelPadding.y;
-  }
-  return { minX, minY, w: maxX - minX, h: maxY - minY };
 }
 
 export function GraphCanvas({
@@ -85,8 +77,7 @@ export function GraphCanvas({
   labelsVisibleRef.current = labelsVisible;
   selectedSessionIdRef.current = selectedSessionId;
 
-  // Center the view to fit graph bounds within the canvas
-  const fitToScreen = useCallback((data?: GraphData) => {
+  const resetGraphView = useCallback((data?: GraphData) => {
     const d = data ?? dataRef.current;
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -95,19 +86,10 @@ export function GraphCanvas({
       return;
     }
     sizeCanvasToContainer(canvas, container);
-    const bounds = graphBounds(d);
     const canvasRect = canvas.getBoundingClientRect();
-    const scaleX = canvasRect.width / (bounds.w + 120);
-    const scaleY = canvasRect.height / (bounds.h + 120);
-    const k = Math.min(scaleX, scaleY, 1);
-    const cx = bounds.minX + bounds.w / 2;
-    const cy = bounds.minY + bounds.h / 2;
-    transformRef.current = {
-      x: canvasRect.width / 2 - cx * k,
-      y: canvasRect.height / 2 - cy * k,
-      k,
-    };
-  }, []);
+    const viewport: GraphViewportSize = { width: canvasRect.width, height: canvasRect.height };
+    transformRef.current = computeResetViewTransform(d, viewport, graphSessionId);
+  }, [graphSessionId]);
 
   // Build graph data
   useEffect(() => {
@@ -128,13 +110,13 @@ export function GraphCanvas({
       spindles: result.spindles,
     };
 
-    fitToScreen(newData);
+    resetGraphView(newData);
 
     // 同时更新数据和标记脏，避免中间状态
     dataRef.current = newData;
     dirtyRef.current = true;
     cacheDirtyRef.current = true;
-  }, [graphTurns, events, childSessions, graphSessionId, fitToScreen]);
+  }, [graphTurns, events, childSessions, graphSessionId, resetGraphView]);
 
   // Invalidate cache on selection change & animate to selected node
   useEffect(() => {
@@ -385,9 +367,9 @@ export function GraphCanvas({
         hoveredNodeIdRef.current = null;
         dirtyRef.current = true;
       },
-      fitToScreen,
+      resetGraphView,
     );
-  }, [onNodeClick, fitToScreen]);
+  }, [onNodeClick, resetGraphView]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -403,9 +385,9 @@ export function GraphCanvas({
   }, []);
 
   const resetView = useCallback(() => {
-    fitToScreen();
+    resetGraphView();
     dirtyRef.current = true;
-  }, [fitToScreen]);
+  }, [resetGraphView]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden">
