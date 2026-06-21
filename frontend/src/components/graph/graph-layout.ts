@@ -268,14 +268,24 @@ function layoutTurn(
 
   const cx = originX;
   const eventTop = originY;
-  const eventBottom = eventTop + (events.length - 1) * TURN_STEP_GAP;
 
-  // Compute event positions
+  // Identify paired outputs — they share a row with their call, not their own
+  const pairedOutputIds = new Set<string>();
+  for (const ev of events) {
+    if (ev.kind === "tool_call" && ev.output_event_id) {
+      pairedOutputIds.add(ev.output_event_id);
+    }
+  }
+
+  // Compute event positions, skipping paired outputs (placed alongside their call)
   const eventPositions: TurnEventPosition[] = [];
+  let rowIdx = 0;
   for (let i = 0; i < events.length; i++) {
     const event = events[i];
+    if (pairedOutputIds.has(event.event_id)) continue;
     const role = mainSpineAnchorRole(turn, event);
-    const y = eventTop + i * TURN_STEP_GAP;
+    const y = eventTop + rowIdx * TURN_STEP_GAP;
+    rowIdx++;
     const x = role ? cx : cx + indentForKind(event.kind);
     eventPositions.push({
       x,
@@ -286,6 +296,32 @@ function layoutTurn(
       isInput: role === "input",
     });
   }
+
+  // Add paired outputs at same y as their call, offset past the call's label
+  for (const pos of [...eventPositions]) {
+    const ev = pos.event;
+    if (ev.kind !== "tool_call" || !ev.output_event_id) continue;
+    const outputEvent = events.find((e) => e.event_id === ev.output_event_id);
+    if (!outputEvent) continue;
+    const label = eventTypeLabel(ev);
+    const labelW = Math.min(SIDE_LABEL_MAX_WIDTH, Math.max(SIDE_LABEL_MIN_WIDTH, label.length * LABEL_CHAR_WIDTH));
+    const offsetX = INTERMEDIATE_RADIUS + SIDE_LABEL_BOUNDS_GAP + labelW;
+    eventPositions.push({
+      x: pos.x + offsetX,
+      y: pos.y,
+      event: outputEvent,
+      index: eventPositions.length,
+      isAnchor: false,
+      isInput: false,
+    });
+  }
+
+  // Sort by y then x so paired outputs follow their call
+  eventPositions.sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+
+  const eventBottom = eventPositions.length > 0
+    ? Math.max(...eventPositions.map((p) => p.y))
+    : eventTop;
   const anchorPositions = eventPositions.filter((pos) => pos.isAnchor);
   const spineTop = anchorPositions[0]?.y ?? eventTop;
   const spineBottom = anchorPositions[anchorPositions.length - 1]?.y ?? spineTop;
@@ -377,6 +413,20 @@ function layoutTurn(
     events: eventPositions,
   });
 
+  // Branch links from tool_call to its paired tool_output (split nodes)
+  for (const pos of eventPositions) {
+    const ev = pos.event;
+    if (ev.kind !== "tool_call" || !ev.output_event_id) continue;
+    const outputPos = eventPositions.find((p) => p.event.event_id === ev.output_event_id);
+    if (outputPos) {
+      links.push({
+        source: ev.event_id,
+        target: ev.output_event_id,
+        type: "branch",
+      });
+    }
+  }
+
   // ── Handle subagent sessions (recursive) ──────────────
   let subagentLaneIdx = 0;
   const totalSubagents = countSubagentSessions(events);
@@ -462,26 +512,19 @@ function mergeToolPairs(events: TurnEvent[]): TurnEvent[] {
     }
   }
 
-  const outputEventIdsToSkip = new Set<string>();
   const callOutputIds = new Map<string, string>();
   for (const event of events) {
     if (event.kind !== "tool_call") continue;
     const callId = extractCallId(event);
     const output = callId ? outputByCallId.get(callId) : undefined;
     if (!output) continue;
-    outputEventIdsToSkip.add(output.event_id);
     callOutputIds.set(event.event_id, output.event_id);
   }
 
-  const merged: TurnEvent[] = [];
-  for (const event of events) {
-    if (event.kind === "tool_output" && outputEventIdsToSkip.has(event.event_id)) {
-      continue;
-    }
+  return events.map((event) => {
     const outputEventId = callOutputIds.get(event.event_id);
-    merged.push(outputEventId ? { ...event, output_event_id: outputEventId } : event);
-  }
-  return merged;
+    return outputEventId ? { ...event, output_event_id: outputEventId } : event;
+  });
 }
 
 function extractCallId(event: TurnEvent): string | null {
