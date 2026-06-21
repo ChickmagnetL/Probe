@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, memo } from "react";
+import { useEffect, useRef, useState, useCallback, useLayoutEffect, memo } from "react";
 import { VariableSizeList as VirtualList } from "react-window";
 import { invoke } from "../../ipc/invoke";
 import { useSessionStore } from "../../stores/session";
@@ -19,6 +19,8 @@ const LINE_THRESHOLD = 200;
 const CHAR_WIDTH = 7.2; // approximate for 12px monospace (fallback only)
 const LINE_HEIGHT = 12 * 1.55; // 12px font * 1.55 leading (fallback only)
 const BORDER_HEIGHT = 1; // border-b on row container
+const MEASURE_WIDTH_BUFFER = 8; // scrollbar/border pixels unavailable to row text
+const ROW_HEIGHT_CHANGE_THRESHOLD = 1;
 
 const TYPE_BADGE_STYLES: Record<string, { bg: string; fg: string }> = {
   session_meta: { bg: "#CFFAFE", fg: "#155E75" },
@@ -88,6 +90,10 @@ function formatJSON(raw: string): string {
   }
 }
 
+function getHeightCacheKey(lineNo: number, containerWidth: number): string {
+  return `${Math.round(containerWidth)}|${lineNo}`;
+}
+
 // ── Single raw line (memo for perf) ────────────────────
 
 interface RawLineItemProps {
@@ -95,6 +101,7 @@ interface RawLineItemProps {
   isSelected: boolean;
   onClick: (eventId: string) => void;
   style?: React.CSSProperties;
+  itemRef?: (el: HTMLDivElement | null) => void;
 }
 
 const RawLineItem = memo(function RawLineItem({
@@ -102,9 +109,11 @@ const RawLineItem = memo(function RawLineItem({
   isSelected,
   onClick,
   style,
+  itemRef,
 }: RawLineItemProps) {
   return (
     <div
+      ref={itemRef}
       className={`border-b border-border/50 cursor-pointer transition-colors ${
         isSelected
           ? "bg-primary/[0.06] border-l-2 border-l-primary/40"
@@ -159,20 +168,38 @@ function TypeBadge({ label }: { label: string }) {
 
 interface VirtualRowProps {
   index: number;
-  data: { lines: RawLine[]; selectedEventId: string | null; onSelect: (id: string) => void };
+  data: {
+    lines: RawLine[];
+    selectedEventId: string | null;
+    onSelect: (id: string) => void;
+    onMeasure: (index: number, height: number) => void;
+  };
   style: React.CSSProperties;
 }
 
 function VirtualRow({ index, data, style }: VirtualRowProps) {
-  const { lines, selectedEventId, onSelect } = data;
+  const { lines, selectedEventId, onSelect, onMeasure } = data;
   const line = lines[index];
+  const itemRef = useRef<HTMLDivElement | null>(null);
+  const setItemRef = useCallback((el: HTMLDivElement | null) => {
+    itemRef.current = el;
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = itemRef.current;
+    if (!el) return;
+    onMeasure(index, el.getBoundingClientRect().height);
+  }, [index, line, selectedEventId, onMeasure]);
+
   return (
-    <RawLineItem
-      line={line}
-      isSelected={line.eventId === selectedEventId}
-      onClick={onSelect}
-      style={style}
-    />
+    <div style={{ ...style, overflow: "hidden" }}>
+      <RawLineItem
+        line={line}
+        isSelected={line.eventId === selectedEventId}
+        onClick={onSelect}
+        itemRef={setItemRef}
+      />
+    </div>
   );
 }
 
@@ -188,19 +215,31 @@ export function RawView() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const virtualListRef = useRef<VirtualList>(null);
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const preMeasureRef = useRef<HTMLPreElement | null>(null);
   const headerHeightRef = useRef<number>(20);
   const heightCacheRef = useRef<Map<string, number>>(new Map());
   const lastMeasureWidthRef = useRef<number>(0);
 
-  // Measure container for accurate row height calculation
-  useEffect(() => {
-    const el = scrollContainerRef.current;
+  const setScrollContainerRef = useCallback((el: HTMLDivElement | null) => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
+    scrollContainerRef.current = el;
+
     if (!el) return;
+
+    const updateSize = () => {
+      setContainerSize({
+        width: el.clientWidth,
+        height: el.clientHeight,
+      });
+    };
+    updateSize();
+
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setContainerSize({
@@ -210,7 +249,11 @@ export function RawView() {
       }
     });
     observer.observe(el);
-    return () => observer.disconnect();
+    resizeObserverRef.current = observer;
+  }, []);
+
+  useEffect(() => {
+    return () => resizeObserverRef.current?.disconnect();
   }, []);
 
   // Create off-screen measurement elements for accurate row height calculation
@@ -259,6 +302,7 @@ export function RawView() {
     headerDiv.remove();
 
     return () => {
+      preMeasureRef.current = null;
       pre.remove();
     };
   }, []);
@@ -272,26 +316,31 @@ export function RawView() {
     }
   }, [containerSize.width]);
 
+  useEffect(() => {
+    heightCacheRef.current.clear();
+    virtualListRef.current?.resetAfterIndex(0);
+  }, [rawContent]);
+
   // Measure the actual rendered height of a row's text content
   const measureRowHeight = useCallback(
-    (text: string, containerWidth: number): number => {
+    (line: RawLine, containerWidth: number): number => {
       const headerH = headerHeightRef.current;
       const pre = preMeasureRef.current;
-
-      if (!pre || containerWidth <= 0) {
-        // Fallback estimation when measurement div is not available
-        const textWidth = containerWidth - 68;
-        const charsPerLine = Math.max(1, Math.floor(textWidth / CHAR_WIDTH));
-        const wrapLines = Math.max(1, Math.ceil(text.length / charsPerLine));
-        return BORDER_HEIGHT + headerH + 4 + wrapLines * LINE_HEIGHT + 8;
-      }
-
-      const cacheKey = `${containerWidth}|${text}`;
+      const cacheKey = getHeightCacheKey(line.lineNo, containerWidth);
       const cached = heightCacheRef.current.get(cacheKey);
       if (cached !== undefined) return cached;
 
-      pre.style.width = `${containerWidth}px`;
-      pre.textContent = text;
+      if (!pre || containerWidth <= 0) {
+        // Fallback estimation when measurement div is not available
+        const textWidth = containerWidth - MEASURE_WIDTH_BUFFER - 68;
+        const charsPerLine = Math.max(1, Math.floor(textWidth / CHAR_WIDTH));
+        const wrapLines = Math.max(1, Math.ceil(line.formatted.length / charsPerLine));
+        return BORDER_HEIGHT + headerH + 4 + wrapLines * LINE_HEIGHT + 8;
+      }
+
+      const measureWidth = Math.max(1, containerWidth - MEASURE_WIDTH_BUFFER);
+      pre.style.width = `${measureWidth}px`;
+      pre.textContent = line.formatted;
       const preHeight = pre.scrollHeight;
       const total = BORDER_HEIGHT + headerH + preHeight;
 
@@ -333,6 +382,28 @@ export function RawView() {
   }
 
   const useVirtualization = lines.length > LINE_THRESHOLD;
+
+  const handleRenderedRowMeasure = useCallback(
+    (index: number, height: number) => {
+      const line = lines[index];
+      if (!line || !Number.isFinite(height) || height <= 0) return;
+
+      const measuredHeight = Math.ceil(height);
+      const cacheKey = getHeightCacheKey(line.lineNo, containerSize.width);
+      const cached = heightCacheRef.current.get(cacheKey);
+      if (
+        cached !== undefined &&
+        cached >= measuredHeight &&
+        Math.abs(cached - measuredHeight) <= ROW_HEIGHT_CHANGE_THRESHOLD
+      ) {
+        return;
+      }
+
+      heightCacheRef.current.set(cacheKey, measuredHeight);
+      virtualListRef.current?.resetAfterIndex(index);
+    },
+    [containerSize.width, lines],
+  );
 
   // Fetch raw content on mount / session change
   useEffect(() => {
@@ -435,20 +506,31 @@ export function RawView() {
 
   // ── Render ──
   if (useVirtualization) {
+    if (containerSize.width <= 0 || containerSize.height <= 0) {
+      return (
+        <div ref={setScrollContainerRef} className="h-full overflow-hidden" />
+      );
+    }
+
     const getItemSize = (index: number) => {
       const line = lines[index];
-      return measureRowHeight(line.formatted, containerSize.width);
+      return measureRowHeight(line, containerSize.width);
     };
 
     return (
-      <div ref={scrollContainerRef} className="h-full overflow-hidden">
+      <div ref={setScrollContainerRef} className="h-full overflow-hidden">
         <VirtualList
           ref={virtualListRef}
           height={containerSize.height}
           itemCount={lines.length}
           itemSize={getItemSize}
           width="100%"
-          itemData={{ lines, selectedEventId, onSelect: handleSelect }}
+          itemData={{
+            lines,
+            selectedEventId,
+            onSelect: handleSelect,
+            onMeasure: handleRenderedRowMeasure,
+          }}
         >
           {VirtualRow}
         </VirtualList>
@@ -457,7 +539,7 @@ export function RawView() {
   }
 
   return (
-    <div ref={scrollContainerRef} className="h-full overflow-y-auto">
+    <div ref={setScrollContainerRef} className="h-full overflow-y-auto">
       {lines.map((line) => (
         <div
           key={line.lineNo}
