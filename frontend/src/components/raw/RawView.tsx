@@ -24,6 +24,8 @@ const TYPE_BADGE_STYLES: Record<string, { bg: string; fg: string }> = {
   session_meta: { bg: "#CFFAFE", fg: "#155E75" },
   turn_context: { bg: "#E0F2FE", fg: "#0369A1" },
   task_started: { bg: "#D1FAE5", fg: "#065F46" },
+  task_completed: { bg: "#D1FAE5", fg: "#065F46" },
+  task_failed: { bg: "#FEE2E2", fg: "#991B1B" },
   user_msg: { bg: "#DBEAFE", fg: "#1D4ED8" },
   developer_msg: { bg: "#FEF3C7", fg: "#92400E" },
   assistant_msg: { bg: "#D1FAE5", fg: "#065F46" },
@@ -33,12 +35,30 @@ const TYPE_BADGE_STYLES: Record<string, { bg: string; fg: string }> = {
   reasoning: { bg: "#EDE9FE", fg: "#5B21B6" },
   tool_call: { bg: "#FEF3C7", fg: "#92400E" },
   tool_output: { bg: "#EDE9FE", fg: "#5B21B6" },
+  function_call: { bg: "#FEF3C7", fg: "#92400E" },
+  function_call_output: { bg: "#EDE9FE", fg: "#5B21B6" },
   exec_command_end: { bg: "#F1F5F9", fg: "#475569" },
+  command_execution: { bg: "#F1F5F9", fg: "#475569" },
+  web_search_end: { bg: "#E0F2FE", fg: "#0369A1" },
+  file_opened: { bg: "#FEF3C7", fg: "#92400E" },
+  file_saved: { bg: "#FEF3C7", fg: "#92400E" },
+  todos_update: { bg: "#EDE9FE", fg: "#5B21B6" },
+  compaction_event: { bg: "#FCE7F3", fg: "#9D174D" },
+  input_image: { bg: "#DBEAFE", fg: "#1D4ED8" },
+  input_attachment: { bg: "#DBEAFE", fg: "#1D4ED8" },
 };
 
 function getTypeLabel(obj: unknown): string {
   if (!obj || typeof obj !== "object") return "unknown";
   const record = obj as Record<string, unknown>;
+
+  // Priority: event_type → payload_type → type routing → fallback
+  const evType = typeof record.event_type === "string" && record.event_type ? record.event_type : null;
+  if (evType) return evType;
+
+  const plType = typeof record.payload_type === "string" && record.payload_type ? record.payload_type : null;
+  if (plType) return plType;
+
   const t = record.type;
   if (typeof t !== "string") return "unknown";
   if (t === "session_meta") return "session_meta";
@@ -54,10 +74,7 @@ function getTypeLabel(obj: unknown): string {
       const role = typeof payload?.role === "string" ? payload.role : "";
       return `${role}_msg`;
     }
-    if (rt === "reasoning") return "reasoning";
-    if (rt === "function_call") return "tool_call";
-    if (rt === "function_call_output") return "tool_output";
-    return rt as string;
+    return rt; // return raw type directly (function_call, function_call_output, reasoning, etc.)
   }
   return t;
 }

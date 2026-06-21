@@ -1,7 +1,7 @@
 import type { EventRow } from "../../ipc/types";
 import { roleColor } from "../../lib/color";
 import { formatTime } from "../../lib/format";
-import { kindLabel } from "../graph/graph-labels";
+import { eventTypeLabel } from "../graph/graph-labels";
 import { extractFields, type EventField } from "../../lib/event-fields";
 
 interface EventNodeProps {
@@ -34,7 +34,7 @@ function getEventFields(event: EventRow): EventField[] {
 
 export function EventNode({ event, index, isSelected, onClick }: EventNodeProps) {
   const color = roleColor(event.role ?? "");
-  const label = kindLabel(event.kind);
+  const label = eventTypeLabel(event);
   const fields = getEventFields(event);
 
   return (

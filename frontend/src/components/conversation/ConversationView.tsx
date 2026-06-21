@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import type { EventRow } from "../../ipc/types";
-import { kindLabel } from "../graph/graph-labels";
+import { eventTypeLabel } from "../graph/graph-labels";
 import { extractFields, type EventField } from "../../lib/event-fields";
 
 interface ConversationViewProps {
@@ -182,11 +182,13 @@ function StepList({
                 `}
               >
                 <span className="shrink-0 text-[10px] font-medium text-muted-foreground uppercase tracking-wide min-w-[60px]">
-                  {kindLabel(step.kind)}
+                  {eventTypeLabel(step)}
                 </span>
-                <span className="text-muted-foreground truncate">
-                  {step.content?.slice(0, 120) || "(empty)"}
-                </span>
+                {step.content && (
+                  <span className="text-muted-foreground truncate">
+                    {step.content.slice(0, 120)}
+                  </span>
+                )}
                 {/* R4: Field summary for each step */}
                 <StepFields fields={fields} />
               </div>

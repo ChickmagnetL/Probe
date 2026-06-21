@@ -14,7 +14,7 @@ import {
   MetadataSection,
   MergedToolCallContent,
 } from "../components/shared/EventDetailContent";
-import { kindLabel } from "../components/graph/graph-labels";
+import { eventTypeLabel } from "../components/graph/graph-labels";
 import { SkeletonLines } from "../components/shared/SkeletonLines";
 import { ErrorBoundary } from "../components/shared/ErrorBoundary";
 import { TitleDragRegion } from "../components/shared/TitleBar";
@@ -428,7 +428,7 @@ export function AppView() {
               </svg>
             </button>
             <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              {kindLabel(selectedEvent.kind)}
+              {eventTypeLabel(selectedEvent)}
             </span>
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">

@@ -1,5 +1,5 @@
 import { kindColor } from "../../lib/color";
-import { kindLabel } from "./graph-labels";
+import { kindLabel, eventTypeLabel } from "./graph-labels";
 
 // ── Interfaces ──────────────────────────────────────────
 
@@ -305,7 +305,7 @@ function layoutTurn(
       const markerNode: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
-        label: graphDetailNodeLabel(ev),
+        label: eventTypeLabel(ev),
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
@@ -350,7 +350,7 @@ function layoutTurn(
       const node: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
-        label: graphDetailNodeLabel(ev),
+        label: eventTypeLabel(ev),
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
@@ -560,43 +560,6 @@ function recordFromMetadata(value: unknown): Record<string, unknown> | null {
   if (isRecord(value)) return value;
   if (typeof value === "string") return parseJsonObject(value);
   return null;
-}
-
-function sourceRecordForEvent(
-  ev: TurnEvent,
-  raw: Record<string, unknown> | null,
-  rawMeta: Record<string, unknown> | null,
-): Record<string, unknown> | null {
-  return recordFromMetadata(ev.source_record)
-    ?? recordFromMetadata(rawMeta?.source_record)
-    ?? recordFromMetadata(raw?.source_record);
-}
-
-function originalEventTypeForEvent(
-  ev: TurnEvent,
-  raw: Record<string, unknown> | null,
-  rawMeta: Record<string, unknown> | null,
-  sourceRecord: Record<string, unknown> | null,
-): string {
-  const sourcePayload = sourceRecord && isRecord(sourceRecord.payload) ? sourceRecord.payload : null;
-
-  return stringField(rawMeta?.event_type)
-    ?? stringField(rawMeta?.payload_type)
-    ?? stringField(raw?.event_type)
-    ?? stringField(raw?.payload_type)
-    ?? stringField(sourceRecord?.event_type)
-    ?? stringField(sourceRecord?.payload_type)
-    ?? stringField(sourcePayload?.type)
-    ?? stringField(ev.event_type)
-    ?? stringField(ev.payload_type)
-    ?? ev.kind;
-}
-
-function graphDetailNodeLabel(ev: TurnEvent): string {
-  const raw = recordFromMetadata(ev.metadata);
-  const rawMeta = raw ? recordFromMetadata(raw.metadata) : null;
-  const sourceRecord = sourceRecordForEvent(ev, raw, rawMeta);
-  return originalEventTypeForEvent(ev, raw, rawMeta, sourceRecord);
 }
 
 function tooltipMetadataForEvent(ev: TurnEvent): Record<string, unknown> {
