@@ -33,6 +33,8 @@ def handle_scan_codex_sessions(params: dict[str, Any]) -> dict[str, Any]:
     )
 
     conn = get_connection()
+    imported_files_dao.delete_orphaned(conn)
+    conn.commit()
     known = imported_files_dao.get_all(conn)
 
     pending: list[dict[str, Any]] = []

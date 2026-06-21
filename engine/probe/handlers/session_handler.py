@@ -7,7 +7,7 @@ import sqlite3
 from typing import Any
 
 from probe.storage import get_connection
-from probe.storage import event_dao, rule_result_dao, session_dao
+from probe.storage import event_dao, imported_files_dao, rule_result_dao, session_dao
 
 
 def handle_list(params: dict[str, Any]) -> dict[str, Any]:
@@ -66,10 +66,11 @@ def handle_delete(params: dict[str, Any]) -> dict[str, Any]:
             if session and session.get("source_path"):
                 files_to_delete.append(session["source_path"])
 
-    # Cascade delete: rule_results → events → sessions
+    # Cascade delete: rule_results → events → imported_files → sessions
     for sid in session_ids:
         rule_result_dao.delete_by_session_id(conn, sid)
         event_dao.delete_by_session_id(conn, sid)
+    imported_files_dao.delete_by_session_ids(conn, session_ids)
 
     deleted_count = session_dao.delete_many(conn, session_ids)
     conn.commit()

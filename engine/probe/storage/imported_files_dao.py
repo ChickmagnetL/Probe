@@ -40,3 +40,22 @@ def upsert(
 
 def delete(conn: sqlite3.Connection, source_path: str) -> None:
     conn.execute("DELETE FROM imported_files WHERE source_path = ?", (source_path,))
+
+
+def delete_orphaned(conn: sqlite3.Connection) -> int:
+    """Delete imported_files rows whose session_id no longer exists in sessions."""
+    cursor = conn.execute(
+        "DELETE FROM imported_files WHERE session_id NOT IN (SELECT id FROM sessions)"
+    )
+    return cursor.rowcount
+
+
+def delete_by_session_ids(conn: sqlite3.Connection, session_ids: list[str]) -> None:
+    """Delete imported_files rows for the given session ids."""
+    if not session_ids:
+        return
+    placeholders = ",".join("?" for _ in session_ids)
+    conn.execute(
+        f"DELETE FROM imported_files WHERE session_id IN ({placeholders})",
+        session_ids,
+    )
