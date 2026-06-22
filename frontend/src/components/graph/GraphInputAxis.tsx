@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent } from "react";
 import type { GraphNode } from "./graph-layout";
-import { inputAxisIndexFromRelativeY, type InputAxisItem } from "./graph-input-axis";
+import {
+  inputAxisIndexFromRelativeY,
+  type InputAxisItem,
+  VISIBLE_WINDOW_SIZE,
+  buildVisibleInputAxisItems,
+  centerInputAxisWindow,
+} from "./graph-input-axis";
 
 interface GraphInputAxisProps {
   items: InputAxisItem[];
@@ -13,10 +19,12 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
   const [dragTooltipNodeId, setDragTooltipNodeId] = useState<string | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [startIndex, setStartIndex] = useState(0);
   const activeTimerRef = useRef<number | null>(null);
   const dragPointerIdRef = useRef<number | null>(null);
   const dragNodeIdRef = useRef<string | null>(null);
   const suppressNextClickRef = useRef(false);
+  const dragMovedRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -25,6 +33,12 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
       }
     };
   }, []);
+
+  useEffect(() => {
+    setStartIndex(0);
+  }, [items]);
+
+  const visibleItems = buildVisibleInputAxisItems(items, startIndex, VISIBLE_WINDOW_SIZE);
 
   if (items.length === 0) return null;
 
@@ -49,19 +63,26 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
     scheduleActiveClear(node.id);
   }
 
-  function itemFromPointer(event: PointerEvent<HTMLDivElement>): InputAxisItem | null {
+  function updateDragSelection(event: PointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const index = inputAxisIndexFromRelativeY(
+    const actualIndex = inputAxisIndexFromRelativeY(
       event.clientY - rect.top,
       rect.height,
       items.length,
     );
-    return index === null ? null : items[index];
-  }
+    if (actualIndex === null) return;
 
-  function updateDragSelection(event: PointerEvent<HTMLDivElement>) {
-    const item = itemFromPointer(event);
+    const item = items[actualIndex];
     if (!item || dragNodeIdRef.current === item.node.id) return;
+
+    const newStartIndex = centerInputAxisWindow(
+      actualIndex,
+      items.length,
+      VISIBLE_WINDOW_SIZE,
+    );
+    if (newStartIndex !== startIndex) {
+      setStartIndex(newStartIndex);
+    }
 
     clearActiveTimer();
     dragNodeIdRef.current = item.node.id;
@@ -73,18 +94,21 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
     event.stopPropagation();
+    event.preventDefault();
 
     dragPointerIdRef.current = event.pointerId;
     dragNodeIdRef.current = null;
-    suppressNextClickRef.current = true;
+    dragMovedRef.current = false;
+    suppressNextClickRef.current = false;
     setIsDragging(true);
     event.currentTarget.setPointerCapture(event.pointerId);
-    updateDragSelection(event);
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (dragPointerIdRef.current !== event.pointerId) return;
     event.stopPropagation();
+    event.preventDefault();
+    dragMovedRef.current = true;
     updateDragSelection(event);
   }
 
@@ -93,6 +117,7 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
     event.stopPropagation();
 
     const selectedNodeId = dragNodeIdRef.current;
+    const moved = dragMovedRef.current;
     dragPointerIdRef.current = null;
     dragNodeIdRef.current = null;
     setIsDragging(false);
@@ -100,13 +125,11 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+    suppressNextClickRef.current = moved;
     if (selectedNodeId) {
       clearActiveTimer();
       scheduleActiveClear(selectedNodeId);
     }
-    window.setTimeout(() => {
-      suppressNextClickRef.current = false;
-    }, 0);
   }
 
   function handleAxisClick(event: MouseEvent<HTMLButtonElement>, node: GraphNode) {
@@ -119,17 +142,17 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
   }
 
   const tooltipNodeId = dragTooltipNodeId ?? hoveredNodeId;
-  const tooltipIndex = tooltipNodeId === null
+  const visibleTooltipIndex = tooltipNodeId === null
     ? -1
-    : items.findIndex((item) => item.node.id === tooltipNodeId);
-  const tooltipItem = tooltipIndex === -1 ? null : items[tooltipIndex];
-  const tooltipTop = tooltipIndex === -1
+    : visibleItems.findIndex((item) => item.node.id === tooltipNodeId);
+  const tooltipItem = visibleTooltipIndex === -1 ? null : visibleItems[visibleTooltipIndex];
+  const tooltipTop = visibleTooltipIndex === -1
     ? "50%"
-    : items.length === 1 ? "50%" : `${(tooltipIndex / (items.length - 1)) * 100}%`;
+    : visibleItems.length === 1 ? "50%" : `${(visibleTooltipIndex / (visibleItems.length - 1)) * 100}%`;
 
   return (
     <div
-      className="pointer-events-auto absolute left-6 top-16 bottom-24 z-40 w-6"
+      className="pointer-events-auto absolute left-6 top-16 bottom-24 z-40 w-6 select-none"
       style={{ touchAction: "none" }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -137,7 +160,8 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
       onPointerCancel={finishPointerDrag}
     >
       <div className="absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 bg-slate-500/20" />
-      {items.map((item, index) => {
+      {visibleItems.map((item, i) => {
+        const globalIndex = startIndex + i;
         const isActive = activeNodeId === item.node.id;
         const feedbackTransitionClass = isDragging
           ? ""
@@ -148,7 +172,7 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
         const dotFeedbackClass = isActive
           ? "graph-input-axis-selected bg-primary/75 opacity-100 shadow-[0_0_0_5px_rgba(37,99,235,0.2),0_0_18px_rgba(37,99,235,0.5)]"
           : `bg-slate-600/35 opacity-60 shadow-[0_0_0_1px_rgba(255,255,255,0.55)] ${hoverFeedbackClass}`;
-        const top = items.length === 1 ? "50%" : `${(index / (items.length - 1)) * 100}%`;
+        const top = visibleItems.length === 1 ? "50%" : `${(i / (visibleItems.length - 1)) * 100}%`;
 
         return (
           <div
@@ -158,7 +182,7 @@ export function GraphInputAxis({ items, onJump }: GraphInputAxisProps) {
           >
             <button
               type="button"
-              aria-label={`Jump to user input ${index + 1}`}
+              aria-label={`Jump to user input ${globalIndex + 1}`}
               className="group pointer-events-auto relative block h-4 w-4 appearance-none rounded-full border-0 bg-transparent p-0 leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
               onClick={(event) => handleAxisClick(event, item.node)}
               onMouseEnter={() => setHoveredNodeId(item.node.id)}

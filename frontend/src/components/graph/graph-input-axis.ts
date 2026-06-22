@@ -21,6 +21,27 @@ export function buildInputAxisItems(nodes: GraphNode[]): InputAxisItem[] {
     }));
 }
 
+export const VISIBLE_WINDOW_SIZE = 15;
+
+export function buildVisibleInputAxisItems(
+  items: InputAxisItem[],
+  startIndex: number,
+  windowSize: number,
+): InputAxisItem[] {
+  return items.slice(startIndex, startIndex + windowSize);
+}
+
+export function centerInputAxisWindow(
+  targetIndex: number,
+  itemCount: number,
+  windowSize: number,
+): number {
+  if (itemCount <= windowSize) return 0;
+  const center = Math.floor(windowSize / 2);
+  const maxStart = itemCount - windowSize;
+  return Math.max(0, Math.min(targetIndex - center, maxStart));
+}
+
 export function centerGraphNodeInViewport(
   node: Pick<GraphNode, "x" | "y">,
   viewport: GraphViewportSize,
