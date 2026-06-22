@@ -13,11 +13,10 @@ import {
 } from "./graph-renderer";
 import { createInteractionHandlers, type Transform } from "./graph-interaction";
 import { GraphTooltip } from "./GraphTooltip";
-import {
-  computeResetViewTransform,
-  graphBounds,
-  type GraphViewportSize,
-} from "./graph-viewport";
+import { GraphInputAxis } from "./GraphInputAxis";
+import { GraphCanvasControls } from "./GraphCanvasControls";
+import { buildInputAxisItems, centerGraphNodeInViewport, type InputAxisItem } from "./graph-input-axis";
+import { computeResetViewTransform, graphBounds, type GraphViewportSize } from "./graph-viewport";
 
 interface GraphCanvasProps {
   graphTurns?: GraphTurn[];
@@ -58,9 +57,12 @@ export function GraphCanvas({
   const transformRef = useRef<Transform>({ x: 0, y: 0, k: 1 });
   const [labelsVisible, setLabelsVisible] = useState(true);
   const [tooltipNode, setTooltipNode] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
+  const [inputAxisItems, setInputAxisItems] = useState<InputAxisItem[]>([]);
 
   // Hover via ref — no React re-render
   const hoveredNodeIdRef = useRef<string | null>(null);
+  const jumpHighlightedNodeIdRef = useRef<string | null>(null);
+  const jumpHighlightTimerRef = useRef<number | null>(null);
 
   // Offscreen cache (world coordinates, no transform)
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -96,6 +98,7 @@ export function GraphCanvas({
     const turns = graphTurns ?? (events ? buildTurnsFromEvents(events) : []);
     if (turns.length === 0) {
       dataRef.current = null;
+      setInputAxisItems([]);
       dirtyRef.current = true;
       cacheDirtyRef.current = true;
       return;
@@ -114,6 +117,7 @@ export function GraphCanvas({
 
     // 同时更新数据和标记脏，避免中间状态
     dataRef.current = newData;
+    setInputAxisItems(buildInputAxisItems(newData.nodes));
     dirtyRef.current = true;
     cacheDirtyRef.current = true;
   }, [graphTurns, events, childSessions, graphSessionId, resetGraphView]);
@@ -189,6 +193,7 @@ export function GraphCanvas({
     const rect = canvas.getBoundingClientRect();
     const t = transformRef.current;
     const hoveredNodeId = hoveredNodeIdRef.current;
+    const jumpHighlightedNodeId = jumpHighlightedNodeIdRef.current;
     const selectedNodeId = selectedEventIdRef.current;
     const labelsVisible = labelsVisibleRef.current;
     const selectedSessionId = selectedSessionIdRef.current;
@@ -221,7 +226,7 @@ export function GraphCanvas({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const state: RenderState = {
         transform: t,
-        hoveredNodeId,
+        hoveredNodeId: hoveredNodeId ?? jumpHighlightedNodeId,
         selectedNodeId,
         labelsVisible,
       };
@@ -289,7 +294,7 @@ export function GraphCanvas({
     renderLabels(ctx, data, t, selectedNodeId, hoveredNodeId, labelsVisible, viewport, highlightIds);
 
     // Dynamic hover overlay
-    renderDynamicOverlay(ctx, data, t, hoveredNodeId);
+    renderDynamicOverlay(ctx, data, t, hoveredNodeId ?? jumpHighlightedNodeId);
   }, []);
 
   useEffect(() => {
@@ -308,6 +313,14 @@ export function GraphCanvas({
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
   }, [draw]);
+
+  useEffect(() => {
+    return () => {
+      if (jumpHighlightTimerRef.current !== null) {
+        window.clearTimeout(jumpHighlightTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -389,6 +402,35 @@ export function GraphCanvas({
     dirtyRef.current = true;
   }, [resetGraphView]);
 
+  const toggleLabels = useCallback(() => {
+    setLabelsVisible((v) => !v);
+  }, []);
+
+  const jumpToInputNode = useCallback((node: GraphNode) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (jumpHighlightTimerRef.current !== null) {
+      window.clearTimeout(jumpHighlightTimerRef.current);
+    }
+    const rect = canvas.getBoundingClientRect();
+    transformRef.current = centerGraphNodeInViewport(
+      node,
+      { width: rect.width, height: rect.height },
+      transformRef.current,
+    );
+    hoveredNodeIdRef.current = null;
+    jumpHighlightedNodeIdRef.current = node.id;
+    setTooltipNode(null);
+    dirtyRef.current = true;
+    jumpHighlightTimerRef.current = window.setTimeout(() => {
+      if (jumpHighlightedNodeIdRef.current === node.id) {
+        jumpHighlightedNodeIdRef.current = null;
+        dirtyRef.current = true;
+      }
+      jumpHighlightTimerRef.current = null;
+    }, 900);
+  }, []);
+
   return (
     <div ref={containerRef} className="absolute inset-0 overflow-hidden">
       <canvas
@@ -398,6 +440,7 @@ export function GraphCanvas({
       />
 
       <div className="pointer-events-none absolute inset-0">
+        <GraphInputAxis items={inputAxisItems} onJump={jumpToInputNode} />
         {tooltipNode && (
           <GraphTooltip
             node={tooltipNode.node}
@@ -407,71 +450,12 @@ export function GraphCanvas({
             viewportHeight={containerRef.current?.clientHeight ?? 600}
           />
         )}
-        <div className="pointer-events-auto absolute top-4 right-4 glass-card rounded-xl p-3">
-          <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">Legend</div>
-          <div className="flex flex-col gap-2 text-xs">
-            <LegendDot color="#3b82f6" label="Input (anchor)" />
-            <LegendDot color="#10b981" label="Output (anchor)" />
-            <LegendDot color="#f59e0b" label="Tool call" small />
-            <LegendDot color="#a855f7" label="Tool result" small />
-            <LegendDot color="#6b7280" label="Reasoning" small />
-          </div>
-        </div>
-
-        <div className="pointer-events-auto absolute left-4 bottom-4 glass-card rounded-xl p-0.5 flex gap-0.5">
-          <button
-            onClick={resetView}
-            className="btn-ghost flex items-center gap-1.5"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="1 4 1 10 7 10" />
-              <path d="M3.51 15a9 9 0 102.13-9.36L1 10" />
-            </svg>
-            Reset
-          </button>
-          <div className="w-px bg-border my-1" />
-          <button
-            onClick={() => setLabelsVisible((v) => !v)}
-            className="btn-ghost flex items-center gap-1.5"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              {labelsVisible ? (
-                <>
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </>
-              ) : (
-                <>
-                  <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
-                  <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </>
-              )}
-            </svg>
-            {labelsVisible ? "Hide" : "Show"}
-          </button>
-        </div>
+        <GraphCanvasControls
+          labelsVisible={labelsVisible}
+          onResetView={resetView}
+          onToggleLabels={toggleLabels}
+        />
       </div>
-    </div>
-  );
-}
-
-function LegendDot({
-  color,
-  label,
-  small,
-}: {
-  color: string;
-  label: string;
-  small?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2 text-card-foreground">
-      <div
-        className={`rounded-full ${small ? "w-1.5 h-1.5" : "w-2.5 h-2.5"}`}
-        style={{ backgroundColor: color }}
-      />
-      <span className="text-xs font-medium">{label}</span>
     </div>
   );
 }

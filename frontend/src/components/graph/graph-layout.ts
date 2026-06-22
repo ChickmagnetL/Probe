@@ -612,6 +612,7 @@ function tooltipMetadataForEvent(ev: TurnEvent): Record<string, unknown> {
   const rawMeta = raw ? recordFromMetadata(raw.metadata) : null;
   const sourceRecord = isRecord(ev.source_record) ? ev.source_record : null;
   const sourcePayload = sourceRecord && isRecord(sourceRecord.payload) ? sourceRecord.payload : null;
+  const inputContentText = inputContentTextForEvent(ev, raw, rawMeta, sourcePayload);
   delete structuredEvent.metadata;
   delete structuredEvent.source_record;
   const eventType = stringField(rawMeta?.event_type)
@@ -629,10 +630,44 @@ function tooltipMetadataForEvent(ev: TurnEvent): Record<string, unknown> {
     ...(sourcePayload ? omitTooltipDisplayFields(sourcePayload) : {}),
     event_type: eventType,
   };
+  if (inputContentText) {
+    tooltipMeta.input_content_text = inputContentText;
+  }
   delete tooltipMeta.metadata;
   delete tooltipMeta.source_record;
   delete tooltipMeta.payload;
   return tooltipMeta;
+}
+
+function inputContentTextForEvent(
+  ev: TurnEvent,
+  raw: Record<string, unknown> | null,
+  rawMeta: Record<string, unknown> | null,
+  sourcePayload: Record<string, unknown> | null,
+): string | null {
+  return textFromContent(sourcePayload?.content)
+    ?? textFromContent(rawMeta?.content)
+    ?? textFromContent(raw?.content)
+    ?? stringField(rawMeta?.content_text)
+    ?? stringField(raw?.content_text)
+    ?? stringField(ev.content);
+}
+
+function textFromContent(content: unknown): string | null {
+  if (typeof content === "string") return content.length > 0 ? content : null;
+  if (Array.isArray(content)) {
+    const fragments: string[] = [];
+    for (const part of content) {
+      if (!isRecord(part)) continue;
+      const text = stringField(part.text) ?? stringField(part.content);
+      if (text) fragments.push(text);
+    }
+    return fragments.length > 0 ? fragments.join("\n") : null;
+  }
+  if (isRecord(content)) {
+    return stringField(content.text);
+  }
+  return null;
 }
 
 function maxNodeBottom(nodes: GraphNode[]): number | null {
