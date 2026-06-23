@@ -12,7 +12,6 @@ import {
   ContentRenderer,
   TokenUsageSection,
   MetadataSection,
-  MergedToolCallContent,
 } from "../components/shared/EventDetailContent";
 import { eventTypeLabel } from "../components/graph/graph-labels";
 import { SkeletonLines } from "../components/shared/SkeletonLines";
@@ -30,27 +29,6 @@ const SORT_OPTIONS = [
   { value: "imported_at:asc", label: "Oldest" },
   { value: "start_time:desc", label: "Latest start" },
 ];
-
-function extractCallId(metadata: string | Record<string, unknown> | null | undefined): string | null {
-  if (!metadata) return null;
-  let parsed: Record<string, unknown>;
-  if (typeof metadata === "string") {
-    try { parsed = JSON.parse(metadata); } catch { return null; }
-  } else {
-    parsed = metadata;
-  }
-  const directCallId = parsed.call_id;
-  if (typeof directCallId === "string" && directCallId) return directCallId;
-  const rawText = parsed.raw_text;
-  if (typeof rawText !== "string") return null;
-  try {
-    const jsonl = JSON.parse(rawText);
-    const payload = jsonl.payload ?? jsonl;
-    return typeof payload.call_id === "string" ? payload.call_id : null;
-  } catch {
-    return null;
-  }
-}
 
 export function AppView() {
   const {
@@ -220,30 +198,6 @@ export function AppView() {
 
   // Use the lazy-loaded event if available, otherwise the selected event
   const displayEvent = loadedEvent ?? selectedEvent;
-
-  const toolPairMap = useMemo(() => {
-    const pairs = new Map<string, { call?: EventRow; output?: EventRow }>();
-    for (const ev of sortedEvents) {
-      if (ev.kind !== "tool_call" && ev.kind !== "tool_output") continue;
-      const callId = extractCallId(ev.metadata);
-      if (!callId) continue;
-      const entry = pairs.get(callId) ?? {};
-      if (ev.kind === "tool_call") entry.call = ev;
-      else entry.output = ev;
-      pairs.set(callId, entry);
-    }
-    return pairs;
-  }, [sortedEvents]);
-
-  const pairedEvent = useMemo(() => {
-    if (!selectedEvent) return undefined;
-    if (selectedEvent.kind !== "tool_call" && selectedEvent.kind !== "tool_output") return undefined;
-    const callId = extractCallId(selectedEvent.metadata);
-    if (!callId) return undefined;
-    const pair = toolPairMap.get(callId);
-    if (!pair) return undefined;
-    return selectedEvent.kind === "tool_call" ? pair.output : pair.call;
-  }, [selectedEvent, toolPairMap]);
 
   const handleOverlayClose = () => {
     selectEvent(null);
@@ -470,12 +424,7 @@ export function AppView() {
             </span>
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-            {selectedEvent && (selectedEvent.kind === "tool_call" || selectedEvent.kind === "tool_output") && pairedEvent ? (
-              <MergedToolCallContent
-                callEvent={selectedEvent.kind === "tool_call" ? (displayEvent ?? selectedEvent) : pairedEvent}
-                outputEvent={selectedEvent.kind === "tool_call" ? pairedEvent : (displayEvent ?? selectedEvent)}
-              />
-            ) : displayEvent ? (
+            {displayEvent ? (
               <>
                 <MetaCardsGrid event={displayEvent} />
                 <TokenUsageSection event={displayEvent} />

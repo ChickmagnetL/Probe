@@ -110,7 +110,7 @@ def handle_event_detail(params: dict[str, Any]) -> dict[str, Any]:
     event = event_dao.get_by_id(conn, event_id)
     if not event:
         raise KeyError(f"event not found: {event_id}")
-    return {"event": event}
+    return event
 
 
 def handle_delete(params: dict[str, Any]) -> dict[str, Any]:

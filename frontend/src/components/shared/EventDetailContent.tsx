@@ -34,10 +34,10 @@ export function MetaCardsGrid({ event }: { event: EventRow }) {
 export function ContentRenderer({ event }: { event: EventRow }) {
   const { role, kind, content, content_preview } = event;
   const displayContent = content ?? content_preview;
-  if (!displayContent) return null;
 
   if (kind === "tool_call") return <ToolCallContent event={event} />;
-  if (kind === "tool_output") return <ToolOutputContent content={displayContent} />;
+  if (kind === "tool_output") return <ToolOutputContent content={displayContent ?? ""} />;
+  if (!displayContent) return null;
   if (role === "user") return <PlainContent content={displayContent} />;
   if (role === "assistant" || kind.includes("assistant"))
     return <MarkdownContent content={displayContent} />;
@@ -172,10 +172,31 @@ function PlainContent({ content }: { content: string }) {
 }
 
 function ToolOutputContent({ content }: { content: string }) {
+  if (!content) return null;
   return (
-    <pre className="rounded-md bg-muted border border-border p-3.5 text-xs text-card-foreground whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed">
-      {content}
-    </pre>
+    <div className="rounded-md border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border-b border-border">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-emerald-500 shrink-0"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+        <span className="text-xs font-semibold text-card-foreground">
+          Output
+        </span>
+      </div>
+      <pre className="text-xs text-card-foreground whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed p-3.5">
+        {content}
+      </pre>
+    </div>
   );
 }
 
@@ -203,6 +224,14 @@ function ToolCallContent({ event }: { event: EventRow }) {
       const meta =
         typeof metadata === "string" ? JSON.parse(metadata) : metadata;
       toolName = meta.name ?? meta.function?.name ?? meta.tool ?? "";
+      if (!toolArgs) {
+        const rawArgs = meta.arguments ?? meta.parameters ?? meta.input ?? meta.args;
+        if (typeof rawArgs === "string") {
+          try { toolArgs = JSON.parse(rawArgs); } catch { toolArgs = { raw: rawArgs }; }
+        } else if (typeof rawArgs === "object" && rawArgs !== null) {
+          toolArgs = rawArgs as Record<string, unknown>;
+        }
+      }
     } catch {
       /* ignore */
     }
@@ -395,99 +424,4 @@ function formatPayload(value: unknown): string {
     }
   }
   return JSON.stringify(value, null, 2);
-}
-
-// ── Merged tool_call + tool_output panel ─────────────────
-
-export function MergedToolCallContent({
-  callEvent,
-  outputEvent,
-}: {
-  callEvent: EventRow;
-  outputEvent?: EventRow;
-}) {
-  return (
-    <div className="space-y-4">
-      {/* Call section */}
-      <div className="rounded-md border border-amber-500/20 overflow-hidden">
-        <div className="flex items-center gap-2 px-3.5 py-2 bg-amber-500/5 border-b border-amber-500/15">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            className="text-amber-500 shrink-0">
-            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-          </svg>
-          <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-            Input
-          </span>
-        </div>
-        <div className="p-3.5 space-y-3">
-          <MetaCardsGrid event={callEvent} />
-          <pre className="text-xs text-card-foreground whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto font-mono leading-relaxed">
-            {(() => {
-              if (callEvent.metadata) {
-                const parsed = typeof callEvent.metadata === "string"
-                  ? (() => { try { return JSON.parse(callEvent.metadata); } catch { return null; } })()
-                  : callEvent.metadata;
-                if (parsed && typeof parsed === "object" && parsed.args) {
-                  const args = parsed.args;
-                  try { return JSON.stringify(JSON.parse(args), null, 2); } catch { return args; }
-                }
-              }
-              return callEvent.content ?? "(no input)";
-            })()}
-          </pre>
-        </div>
-      </div>
-      {callEvent.metadata && (
-        <MetadataSection
-          metadata={callEvent.metadata}
-          sourceLineNo={callEvent.source_line_no}
-          label="Call Detail"
-        />
-      )}
-
-      {/* Connector */}
-      <div className="flex justify-center py-1">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          className="text-muted-foreground">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <polyline points="19 12 12 19 5 12" />
-        </svg>
-      </div>
-
-      {/* Output section */}
-      {outputEvent ? (
-        <>
-          <div className="rounded-md border border-emerald-500/20 overflow-hidden">
-            <div className="flex items-center gap-2 px-3.5 py-2 bg-emerald-500/5 border-b border-emerald-500/15">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                className="text-emerald-500 shrink-0">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                Output
-              </span>
-            </div>
-            <div className="p-3.5 space-y-3">
-              <MetaCardsGrid event={outputEvent} />
-              <ContentRenderer event={outputEvent} />
-            </div>
-          </div>
-          {outputEvent.metadata && (
-            <MetadataSection
-              metadata={outputEvent.metadata}
-              sourceLineNo={outputEvent.source_line_no}
-              label="Output Detail"
-            />
-          )}
-        </>
-      ) : (
-        <div className="rounded-md border border-dashed border-border p-4 text-center">
-          <span className="text-xs text-muted-foreground">No output recorded</span>
-        </div>
-      )}
-    </div>
-  );
 }
