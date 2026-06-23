@@ -1,4 +1,5 @@
 import type {
+  EventRow,
   ImportBatchResult,
   ImportResult,
   ListSessionsParams,
@@ -82,6 +83,14 @@ export const invoke = {
     return fn<SessionDetail>("engine_call", {
       method: "get_session_detail",
       params: { session_id: sessionId },
+    });
+  },
+
+  async getEventDetail(eventId: string): Promise<EventRow> {
+    const fn = await getInvoke();
+    return fn<EventRow>("engine_call", {
+      method: "get_event_detail",
+      params: { event_id: eventId },
     });
   },
 

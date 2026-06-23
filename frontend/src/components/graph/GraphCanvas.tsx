@@ -68,6 +68,7 @@ export function GraphCanvas({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cacheDirtyRef = useRef(true);
   const cacheBoundsRef = useRef<{ minX: number; minY: number }>({ minX: 0, minY: 0 });
+  const layoutCacheRef = useRef<{ key: string; data: GraphData } | null>(null);
 
   const dirtyRef = useRef(true);
 
@@ -104,6 +105,16 @@ export function GraphCanvas({
       return;
     }
 
+    const cacheKey = `${turns.length}-${turns[0]?.input?.event_id ?? 'none'}-${turns[turns.length - 1]?.output?.event_id ?? 'none'}-${childSessions?.length ?? 0}`;
+    if (layoutCacheRef.current?.key === cacheKey && layoutCacheRef.current.data) {
+      const cached = layoutCacheRef.current.data;
+      dataRef.current = cached;
+      setInputAxisItems(buildInputAxisItems(cached.nodes));
+      dirtyRef.current = true;
+      cacheDirtyRef.current = true;
+      return;
+    }
+
     const result = buildGraphFromTurns(turns, childSessions, undefined, undefined, graphSessionId);
     const newData: GraphData = {
       nodes: result.nodes,
@@ -113,9 +124,10 @@ export function GraphCanvas({
       spindles: result.spindles,
     };
 
+    layoutCacheRef.current = { key: cacheKey, data: newData };
+
     resetGraphView(newData);
 
-    // 同时更新数据和标记脏，避免中间状态
     dataRef.current = newData;
     setInputAxisItems(buildInputAxisItems(newData.nodes));
     dirtyRef.current = true;

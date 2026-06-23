@@ -42,12 +42,16 @@ def test_handle_detail_returns_nested_children(monkeypatch: pytest.MonkeyPatch, 
 
     detail = session_handler.handle_detail({"session_id": "root"})
 
+    # Root session should have its own events
+    assert detail["events"][0]["id"] == "root-event"
+
+    # Children are present in the tree but with empty events (lazy-loaded)
     child = detail["children"][0]
     grandchild = child["children"][0]
     assert child["id"] == "child"
-    assert child["events"][0]["id"] == "child-event"
+    assert child["events"] == []
     assert grandchild["id"] == "grandchild"
-    assert grandchild["events"][0]["id"] == "grandchild-event"
+    assert grandchild["events"] == []
 
 
 def test_handle_detail_requires_session_id() -> None:

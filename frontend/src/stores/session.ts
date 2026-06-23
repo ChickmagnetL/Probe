@@ -6,7 +6,26 @@ import type {
   ListSessionsParams,
 } from "../ipc/types";
 
-const ANIM_DURATION = 500;
+const DETAIL_CACHE = new Map<string, SessionDetail>();
+const MAX_CACHE_SIZE = 10;
+
+function cacheGet(key: string): SessionDetail | undefined {
+  const val = DETAIL_CACHE.get(key);
+  if (val !== undefined) {
+    DETAIL_CACHE.delete(key);
+    DETAIL_CACHE.set(key, val);
+  }
+  return val;
+}
+
+function cacheSet(key: string, val: SessionDetail): void {
+  DETAIL_CACHE.delete(key);
+  DETAIL_CACHE.set(key, val);
+  if (DETAIL_CACHE.size > MAX_CACHE_SIZE) {
+    const oldest = DETAIL_CACHE.keys().next().value;
+    if (oldest) DETAIL_CACHE.delete(oldest);
+  }
+}
 
 interface SessionState {
   sessions: SessionRow[];
@@ -41,8 +60,6 @@ interface SessionState {
   clearDetail: () => void;
   deleteSessions: (deleteFiles: boolean) => Promise<void>;
 }
-
-let _pendingTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
@@ -101,20 +118,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   fetchDetail: async (sessionId) => {
-    // Cancel any pending delayed apply from a previous session switch
-    if (_pendingTimeout) { clearTimeout(_pendingTimeout); _pendingTimeout = null; }
+    const cached = cacheGet(sessionId);
+    if (cached) {
+      set({ activeSessionId: sessionId, detail: cached, detailLoading: false, selectedEventId: null });
+      return;
+    }
 
-    // Step 1: Update activeSessionId immediately → indicator starts sliding
     set({ detailLoading: true, activeSessionId: sessionId, selectedEventId: null });
-
-    // Step 2: Fetch data (non-blocking IPC)
     try {
       const detail = await invoke.getSessionDetail(sessionId);
-      // Step 3: Delay applying detail until indicator animation finishes
-      _pendingTimeout = setTimeout(() => {
-        _pendingTimeout = null;
-        set({ detail, detailLoading: false });
-      }, ANIM_DURATION);
+      cacheSet(sessionId, detail);
+      set({ detail, detailLoading: false });
     } catch (e) {
       set({ error: String(e), detailLoading: false });
     }
@@ -123,7 +137,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   selectEvent: (eventId) => set({ selectedEventId: eventId }),
 
   clearDetail: () => {
-    if (_pendingTimeout) { clearTimeout(_pendingTimeout); _pendingTimeout = null; }
     set({ activeSessionId: null, detail: null, detailLoading: false, selectedEventId: null });
   },
 

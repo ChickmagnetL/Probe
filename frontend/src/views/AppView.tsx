@@ -22,6 +22,7 @@ import { FilterBar } from "../components/shared/FilterBar";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog";
 import { SettingsPanel } from "../components/settings/SettingsPanel";
 import { ProgressBar } from "../components/shared/ProgressBar";
+import { invoke } from "../ipc/invoke";
 import type { EventRow } from "../ipc/types";
 
 const SORT_OPTIONS = [
@@ -182,6 +183,43 @@ export function AppView() {
   }, [detail?.events]);
 
   const selectedEvent = sortedEvents.find((e) => e.id === selectedEventId);
+
+  // Lazily load full event content when the detail overlay opens.
+  // The backend may strip `content` from get_session_detail, keeping only
+  // `content_preview`. When an event without `content` is selected, fetch
+  // the full event via get_event_detail IPC.
+  const [loadedEvent, setLoadedEvent] = useState<EventRow | null>(null);
+  const [loadingEvent, setLoadingEvent] = useState(false);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      setLoadedEvent(null);
+      setLoadingEvent(false);
+      return;
+    }
+    if (selectedEvent.content) {
+      // Event already has full content, no need to fetch
+      setLoadedEvent(null);
+      setLoadingEvent(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingEvent(true);
+    invoke.getEventDetail(selectedEvent.id).then((full) => {
+      if (!cancelled) {
+        setLoadedEvent(full);
+        setLoadingEvent(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setLoadingEvent(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [selectedEvent]);
+
+  // Use the lazy-loaded event if available, otherwise the selected event
+  const displayEvent = loadedEvent ?? selectedEvent;
 
   const toolPairMap = useMemo(() => {
     const pairs = new Map<string, { call?: EventRow; output?: EventRow }>();
@@ -432,22 +470,26 @@ export function AppView() {
             </span>
           </div>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-            {(selectedEvent.kind === "tool_call" || selectedEvent.kind === "tool_output") && pairedEvent ? (
+            {selectedEvent && (selectedEvent.kind === "tool_call" || selectedEvent.kind === "tool_output") && pairedEvent ? (
               <MergedToolCallContent
-                callEvent={selectedEvent.kind === "tool_call" ? selectedEvent : pairedEvent}
-                outputEvent={selectedEvent.kind === "tool_call" ? pairedEvent : selectedEvent}
+                callEvent={selectedEvent.kind === "tool_call" ? (displayEvent ?? selectedEvent) : pairedEvent}
+                outputEvent={selectedEvent.kind === "tool_call" ? pairedEvent : (displayEvent ?? selectedEvent)}
               />
-            ) : (
+            ) : displayEvent ? (
               <>
-                <MetaCardsGrid event={selectedEvent} />
-                <TokenUsageSection event={selectedEvent} />
-                <ContentRenderer event={selectedEvent} />
+                <MetaCardsGrid event={displayEvent} />
+                <TokenUsageSection event={displayEvent} />
+                {loadingEvent ? (
+                  <SkeletonLines count={2} />
+                ) : (
+                  <ContentRenderer event={displayEvent} />
+                )}
                 <MetadataSection
-                  metadata={selectedEvent.metadata}
-                  sourceLineNo={selectedEvent.source_line_no}
+                  metadata={displayEvent.metadata}
+                  sourceLineNo={displayEvent.source_line_no}
                 />
               </>
-            )}
+            ) : null}
           </div>
         </div>
       )}

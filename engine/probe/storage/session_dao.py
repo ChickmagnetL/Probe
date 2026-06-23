@@ -98,6 +98,18 @@ def get_children(conn: sqlite3.Connection, parent_id: str) -> list[dict[str, Any
     return [_row_to_session(r) for r in rows]
 
 
+def get_by_ids(conn: sqlite3.Connection, session_ids: list[str]) -> list[dict[str, Any]]:
+    """Bulk-fetch sessions by ID list."""
+    if not session_ids:
+        return []
+    placeholders = ",".join("?" for _ in session_ids)
+    rows = conn.execute(
+        f"SELECT * FROM sessions WHERE id IN ({placeholders})",
+        session_ids,
+    ).fetchall()
+    return [_row_to_session(r) for r in rows]
+
+
 def delete_by_id(conn: sqlite3.Connection, session_id: str) -> None:
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 

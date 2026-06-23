@@ -43,6 +43,21 @@ def get_by_session_id(
     return [_row_to_event(r) for r in rows]
 
 
+def get_by_session_ids(
+    conn: sqlite3.Connection,
+    session_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Bulk-fetch events for multiple sessions, ordered by timestamp then source_line_no."""
+    if not session_ids:
+        return []
+    placeholders = ",".join("?" for _ in session_ids)
+    rows = conn.execute(
+        f"SELECT * FROM events WHERE session_id IN ({placeholders}) ORDER BY timestamp, source_line_no",
+        session_ids,
+    ).fetchall()
+    return [_row_to_event(r) for r in rows]
+
+
 def get_by_id(conn: sqlite3.Connection, event_id: str) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT * FROM events WHERE id = ?", (event_id,)

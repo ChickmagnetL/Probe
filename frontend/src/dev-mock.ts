@@ -94,6 +94,29 @@ function eventToRow(e: JSONDict): EventRow {
   };
 }
 
+function findEventById(eventId: string): EventRow | null {
+  if (!currentSummary) return null;
+  const sessions = (currentSummary.sessions as JSONDict[]) ?? [];
+  for (const session of sessions) {
+    const events = (session.events as JSONDict[]) ?? [];
+    const found = events.find((e) => e.event_id === eventId);
+    if (found) {
+      return {
+        id: String(found.event_id ?? ""),
+        session_id: String(found.session_id ?? ""),
+        kind: String(found.kind ?? ""),
+        timestamp: (found.timestamp as string) ?? null,
+        role: (found.role as string) ?? null,
+        phase: (found.phase as string) ?? null,
+        content: (found.content as string) ?? null,
+        metadata: JSON.stringify(found),
+        source_line_no: typeof found.source_line_no === "number" ? found.source_line_no : null,
+      };
+    }
+  }
+  return null;
+}
+
 function buildImportResult(summary: JSONDict): ImportResult {
   return {
     total_files: Number(summary.total_files ?? 0),
@@ -237,6 +260,15 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
           throw new Error(`Session not found: ${sessionId}`);
         }
         return detail as T;
+      }
+
+      case "get_event_detail": {
+        const eventId = methodParams.event_id as string;
+        const event = findEventById(eventId);
+        if (!event) {
+          throw new Error(`Event not found: ${eventId}`);
+        }
+        return event as T;
       }
 
       case "delete_sessions": {

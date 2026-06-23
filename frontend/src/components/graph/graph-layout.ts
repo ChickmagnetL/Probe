@@ -981,15 +981,27 @@ function toTurnEvent(ev: RawEvent): TurnEvent {
     childSessionId = _extractChildSessionId(ev.metadata);
   }
 
+  // Build a lightweight metadata object instead of embedding the full RawEvent,
+  // which duplicates all event data in memory. Only keep fields needed downstream.
+  const rawMeta = typeof ev.metadata === "string"
+    ? (() => { try { return JSON.parse(ev.metadata); } catch { return null; } })()
+    : isRecord(ev.metadata) ? ev.metadata : null;
+
   return {
     event_id: ev.id,
     kind: ev.kind,
     title: kindLabel(ev.kind),
-    summary: ev.content?.slice(0, 80) ?? ev.kind,
+    summary: (ev as any).content_preview?.slice(0, 80) ?? ev.content?.slice(0, 80) ?? ev.kind,
     child_session_id: childSessionId,
     timestamp: ev.timestamp ?? undefined,
     source_line_no: ev.source_line_no ?? undefined,
-    metadata: ev,
+    metadata: {
+      timestamp: ev.timestamp,
+      source_line_no: ev.source_line_no,
+      role: ev.role,
+      content_preview: (ev as any).content_preview ?? ev.content?.slice(0, 200),
+      ...(rawMeta ? rawMeta : {}),
+    },
   };
 }
 

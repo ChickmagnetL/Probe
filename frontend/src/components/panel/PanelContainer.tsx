@@ -17,10 +17,12 @@ import { RawView } from "../raw/RawView";
 const VIEW_TABS: ViewKind[] = ["graph", "timeline", "chat", "raw"];
 
 function childDetailToGraphSession(child: ChildSessionDetail): ChildSession {
-  // Pre-compute first event timestamp for performance
+  // Pre-compute first event timestamp. When events are present, scan for the
+  // earliest timestamp; otherwise fall back to session start_time (children are
+  // sent without events after the lazy-loading optimization).
   let firstTimestamp: string | null = null;
-  if (child.events && child.events.length > 0) {
-    // Find the earliest timestamp in the child's events
+  const hasEvents = child.events && child.events.length > 0;
+  if (hasEvents) {
     for (const event of child.events) {
       if (event.timestamp) {
         if (!firstTimestamp || event.timestamp < firstTimestamp) {
@@ -29,10 +31,13 @@ function childDetailToGraphSession(child: ChildSessionDetail): ChildSession {
       }
     }
   }
+  if (!firstTimestamp) {
+    firstTimestamp = child.start_time ?? null;
+  }
 
   return {
     session_id: child.id,
-    graph_turns: buildTurnsFromEvents(child.events),
+    graph_turns: hasEvents ? buildTurnsFromEvents(child.events) : [],
     child_sessions: child.children?.map(childDetailToGraphSession),
     first_event_timestamp: firstTimestamp,
   };
@@ -203,33 +208,17 @@ function PanelViewContent({ view }: PanelViewContentProps) {
   const fetchDetail = useSessionStore((s) => s.fetchDetail);
   const setExpanded = useSessionStore((s) => s.setExpanded);
 
-  // Timeline/Chat data: always from the currently selected session
+  // Timeline/Chat data: events are already sorted by the backend.
   const sortedEvents = useMemo(() => {
     if (!detail?.events) return [] as EventRow[];
-    return [...detail.events].sort((a, b) => {
-      if (!a.timestamp && !b.timestamp)
-        return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
-      if (!a.timestamp) return 1;
-      if (!b.timestamp) return -1;
-      const cmp = a.timestamp.localeCompare(b.timestamp);
-      if (cmp !== 0) return cmp;
-      return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
-    });
+    return [...detail.events];
   }, [detail?.events]);
 
-  // Graph data source: focus mode — always use the currently selected session (detail).
-  // When a child sub-agent is selected, Graph switches to show only that child's events + its markers.
+  // Graph data source: events are already sorted by the backend.
+  // buildTurnsFromEvents also sorts internally, so duplicate sorting is wasteful.
   const graphEvents = useMemo(() => {
     if (!detail?.events) return [] as EventRow[];
-    return [...detail.events].sort((a, b) => {
-      if (!a.timestamp && !b.timestamp)
-        return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
-      if (!a.timestamp) return 1;
-      if (!b.timestamp) return -1;
-      const cmp = a.timestamp.localeCompare(b.timestamp);
-      if (cmp !== 0) return cmp;
-      return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
-    });
+    return [...detail.events];
   }, [detail?.events]);
 
   // R5: Convert detail.children to ChildSession[] for GraphCanvas

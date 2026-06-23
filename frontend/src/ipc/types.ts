@@ -112,6 +112,7 @@ export interface EventRow {
   role: string | null;
   phase: string | null;
   content: string | null;
+  content_preview?: string | null;
   metadata: string | Record<string, unknown> | null;
   source_line_no: number | null;
 }

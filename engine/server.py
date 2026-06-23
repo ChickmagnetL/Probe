@@ -24,6 +24,7 @@ HANDLERS = {
     "scan_codex_sessions": scan_handler.handle_scan_codex_sessions,
     "list_sessions": session_handler.handle_list,
     "get_session_detail": session_handler.handle_detail,
+    "get_event_detail": session_handler.handle_event_detail,
     "delete_sessions": session_handler.handle_delete,
     "get_settings": settings_handler.handle_get,
     "set_settings": settings_handler.handle_set,

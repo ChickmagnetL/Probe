@@ -32,15 +32,16 @@ export function MetaCardsGrid({ event }: { event: EventRow }) {
 // ── Content renderer by role/kind ────────────────────────
 
 export function ContentRenderer({ event }: { event: EventRow }) {
-  const { role, kind, content } = event;
-  if (!content) return null;
+  const { role, kind, content, content_preview } = event;
+  const displayContent = content ?? content_preview;
+  if (!displayContent) return null;
 
   if (kind === "tool_call") return <ToolCallContent event={event} />;
-  if (kind === "tool_output") return <ToolOutputContent content={content} />;
-  if (role === "user") return <PlainContent content={content} />;
+  if (kind === "tool_output") return <ToolOutputContent content={displayContent} />;
+  if (role === "user") return <PlainContent content={displayContent} />;
   if (role === "assistant" || kind.includes("assistant"))
-    return <MarkdownContent content={content} />;
-  return <PlainContent content={content} />;
+    return <MarkdownContent content={displayContent} />;
+  return <PlainContent content={displayContent} />;
 }
 
 // ── Token usage ─────────────────────────────────────────
