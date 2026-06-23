@@ -40,9 +40,16 @@ function drawNodeLabel(
     return;
   }
 
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  ctx.fillText(node.label, node.x + r + SIDE_LABEL_GAP, node.y);
+  // Non-anchor nodes: default to right side, unless labelAlign is "left"
+  if (node.labelAlign === "left") {
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(node.label, node.x - r - SIDE_LABEL_GAP, node.y);
+  } else {
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(node.label, node.x + r + SIDE_LABEL_GAP, node.y);
+  }
 }
 
 // ── Subagent Marker (R4) ───────────────────────────────

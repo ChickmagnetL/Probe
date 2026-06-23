@@ -88,7 +88,7 @@ export const SessionCard = memo(function SessionCard({
   const baseLeftPad = 6;
 
   // Click behavior for rows with subagent children (hasChildren):
-  //   - inactive click → open detail AND expand children
+  //   - inactive (first) click → open detail only, do NOT expand children
   //   - active re-click → toggle children expand (no detail re-fetch)
   // Rows without children: click just opens the detail. The dedicated arrow
   // button still does a pure toggle (it stops propagation in the card).
@@ -98,7 +98,7 @@ export const SessionCard = memo(function SessionCard({
         onSetExpanded(session.id, !isExpanded);
       } else {
         onSelect(session.id);
-        onSetExpanded(session.id, true);
+        // First click: open detail only, do NOT auto-expand children
       }
     } else {
       onSelect(session.id);

@@ -25,7 +25,7 @@ interface GraphCanvasProps {
   selectedEventId: string | null;
   graphSessionId?: string;
   selectedSessionId?: string;
-  onNodeClick: (eventId: string | null) => void;
+  onNodeClick: (eventId: string | null, sessionId?: string, parentSessionId?: string) => void;
 }
 
 function sizeCanvasToContainer(
@@ -127,8 +127,16 @@ export function GraphCanvas({
     cacheDirtyRef.current = true;
     dirtyRef.current = true;
 
-    if (!selectedEventId || !dataRef.current || !canvasRef.current) return;
-    const node = dataRef.current.nodes.find((n) => n.eventId === selectedEventId);
+    if (!dataRef.current || !canvasRef.current) return;
+
+    // Center on the explicitly selected event.
+    // In focus mode, graphSessionId === selectedSessionId, so selecting a sub-agent
+    // triggers the data-build effect's resetGraphView (which centers to the new
+    // session's first input), not this effect.
+    let node: GraphNode | undefined;
+    if (selectedEventId) {
+      node = dataRef.current.nodes.find((n) => n.eventId === selectedEventId);
+    }
     if (!node) return;
 
     const canvas = canvasRef.current;
@@ -369,7 +377,12 @@ export function GraphCanvas({
         // Clear tooltip on click
         setTooltipNode(null);
         if (node) {
-          onNodeClick(node.eventId);
+          // Synthesized markers (no real spawn event) carry an eventId of
+          // the form "synth:<sessionId>". Don't propagate that as a
+          // selectedEventId — it isn't a real event. The sessionId drives
+          // reverse-sync (fetchDetail) which is what we actually want.
+          const eventId = node.eventId?.startsWith("synth:") ? null : node.eventId;
+          onNodeClick(eventId, node.sessionId, node.parentSessionId);
         } else {
           // Click on blank area: clear event selection, revert to session dimming
           onNodeClick(null);

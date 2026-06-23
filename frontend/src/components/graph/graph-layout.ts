@@ -17,9 +17,11 @@ export interface GraphNode {
   isAnchor: boolean;
   isInput: boolean;
   sessionId?: string;
+  parentSessionId?: string;
   spindleRole?: "anchor" | "intermediate" | "subagent";
   subagentTint?: string;
   metadata?: Record<string, unknown>;
+  labelAlign?: "left" | "right";
 }
 
 export interface GraphLink {
@@ -65,6 +67,7 @@ export interface ChildSession {
   session_id: string;
   graph_turns?: GraphTurn[];
   child_sessions?: ChildSession[];
+  first_event_timestamp?: string | null;
 }
 
 /** Position of one event in the folder tree */
@@ -92,9 +95,6 @@ export interface TurnSpindle {
 const TURN_STEP_GAP = 28;
 const TURN_GAP = 35;
 const FOLDER_INDENT_STEP = 20;
-const CHILD_SESSION_OFFSET_X = 240;
-const CHILD_SESSION_OFFSET_Y = 15;
-const CHILD_SESSION_LANE_STEP = 180;
 const ANCHOR_RADIUS = 7.5;
 const INTERMEDIATE_RADIUS = 4.5;
 const SUBAGENT_MARKER_RADIUS = 6;
@@ -133,7 +133,7 @@ export function graphNodeLabelRadius(
 }
 
 export function graphNodeLabelPadding(
-  node: Pick<GraphNode, "isAnchor" | "label" | "radius" | "spindleRole">,
+  node: Pick<GraphNode, "isAnchor" | "label" | "radius" | "spindleRole" | "labelAlign">,
 ): { left: number; right: number; y: number } {
   const r = graphNodeLabelRadius(node);
   if (node.isAnchor) {
@@ -145,6 +145,16 @@ export function graphNodeLabelPadding(
     SIDE_LABEL_MAX_WIDTH,
     Math.max(SIDE_LABEL_MIN_WIDTH, node.label.length * LABEL_CHAR_WIDTH),
   );
+
+  // If label is on the left, swap left/right padding
+  if (node.labelAlign === "left") {
+    return {
+      left: r + SIDE_LABEL_BOUNDS_GAP + labelWidth,
+      right: r + SIDE_LABEL_BOUNDS_LEFT_PAD,
+      y: Math.max(r + 10, 16),
+    };
+  }
+
   return {
     left: r + SIDE_LABEL_BOUNDS_LEFT_PAD,
     right: r + SIDE_LABEL_BOUNDS_GAP + labelWidth,
@@ -199,6 +209,136 @@ export function buildGraphFromTurns(
     currentY = result.nextY;
   }
 
+  // ── Synthesize markers for sub-agents without spawn events ──
+  // Some children are linked via parent_session_id but have no
+  // `subagent_session` spawn event in the parent's events table, so
+  // layoutTurn never created a marker for them. Synthesize one per
+  // unconsumed direct child, positioned by time relative to parent
+  // input anchors. In focus mode the subtree is collapsed: only the
+  // marker node is created, never its descendant nodes.
+  if (childSessions && childSessions.length > 0) {
+    // Collect child_session_ids already consumed by real spawn markers.
+    const consumedChildIds = new Set<string>();
+    for (const n of nodes) {
+      if (n.kind === "subagent_session" && n.sessionId) {
+        consumedChildIds.add(n.sessionId);
+      }
+    }
+
+    // Parent input anchors (this graph's session), sorted by y, used to
+    // place synthesized markers at the y of the latest parent input
+    // whose timestamp is ≤ the child's first event timestamp.
+    const parentInputAnchors = nodes
+      .filter((n) => n.isInput && n.sessionId === sessionId)
+      .sort((a, b) => a.y - b.y);
+    // Build parallel timestamp array (ms since epoch or Infinity).
+    const parentInputTimes = parentInputAnchors.map((n) => {
+      const ts = nodeEventTimestamp(n);
+      return ts !== null ? Date.parse(ts) : Infinity;
+    });
+
+    // Global multi-sub tint: count real spawn markers + synthesized ones.
+    const realMarkerCount = consumedChildIds.size;
+    const synthCandidates: ChildSession[] = [];
+    for (const child of childSessions) {
+      if (!consumedChildIds.has(child.session_id)) {
+        synthCandidates.push(child);
+      }
+    }
+    const totalSubagents = realMarkerCount + synthCandidates.length;
+    const multiSub = totalSubagents >= 2;
+
+    // Track lane occupancy per y so synthesized markers at the same y
+    // don't overlap. Real spawn markers' lanes are per-turn local; we
+    // only need to avoid collisions among synthesized markers here,
+    // and we start each y's lane at 0 (real spawn markers at that y
+    // already used their own per-turn lanes, but a synthesized marker
+    // at the same y is visually acceptable in its own lane since
+    // CHILD_SESSION_LANE_STEP is wide enough to read).
+    const laneByY = new Map<number, number>();
+    let synthIdx = 0;
+
+    for (const child of synthCandidates) {
+      if (!child.graph_turns) continue;
+
+      // Determine marker y from child's first event timestamp.
+      // Use pre-computed timestamp if available, otherwise fall back to computing it
+      const childFirstTs = child.first_event_timestamp ?? childFirstEventTimestamp(child);
+      let markerY: number;
+      if (parentInputAnchors.length === 0) {
+        markerY = startY;
+      } else if (childFirstTs === null) {
+        // No child timestamp; fall back to the last parent input anchor.
+        markerY = parentInputAnchors[parentInputAnchors.length - 1].y;
+      } else {
+        const childMs = Date.parse(childFirstTs);
+        // Find the largest parent input timestamp ≤ childMs.
+        let picked = parentInputAnchors[0].y;
+        for (let i = 0; i < parentInputAnchors.length; i++) {
+          if (parentInputTimes[i] <= childMs) {
+            picked = parentInputAnchors[i].y;
+          } else {
+            break;
+          }
+        }
+        markerY = picked;
+      }
+
+      // Lane assignment: per-y incremental.
+      const laneIdx = laneByY.get(markerY) ?? 0;
+      laneByY.set(markerY, laneIdx + 1);
+
+      const tint = multiSub ? subagentTintAt(synthIdx) : "#475569";
+      const markerId = `synth:${child.session_id}`;
+
+      const markerNode: GraphNode = {
+        id: markerId,
+        eventId: markerId,
+        label: kindLabel("subagent_session"),
+        kind: "subagent_session",
+        x: startX + indentForKind("subagent_session"),
+        y: markerY,
+        radius: SUBAGENT_MARKER_RADIUS,
+        color: tint,
+        filled: false,
+        strokeWidth: 1.5,
+        isAnchor: false,
+        isInput: false,
+        sessionId: child.session_id,
+        parentSessionId: sessionId,
+        spindleRole: "subagent",
+        metadata: { synthesized: true },
+        labelAlign: "left",
+        ...(multiSub ? { subagentTint: tint } : {}),
+      };
+      nodes.push(markerNode);
+
+      // Create spawn link from the nearest parent input anchor to this marker
+      let sourceAnchorId: string | null = null;
+      for (let i = parentInputAnchors.length - 1; i >= 0; i--) {
+        if (parentInputAnchors[i].y <= markerY) {
+          sourceAnchorId = parentInputAnchors[i].id;
+          break;
+        }
+      }
+      // If no anchor found (marker before first input), use the first input
+      if (!sourceAnchorId && parentInputAnchors.length > 0) {
+        sourceAnchorId = parentInputAnchors[0].id;
+      }
+
+      if (sourceAnchorId) {
+        links.push({
+          source: sourceAnchorId,
+          target: markerId,
+          type: "spawn",
+          tint: multiSub ? tint : undefined,
+        });
+      }
+
+      synthIdx++;
+    }
+  }
+
   let maxNodeX = startX;
   for (const n of nodes) {
     const { right } = graphNodeLabelPadding(n);
@@ -247,6 +387,23 @@ function collectTurnEvents(turn: GraphTurn): TurnEvent[] {
 // ── Folder Tree Layout ──────────────────────────────────
 
 /**
+ * Find the latest input anchor at or before the given Y position.
+ * Used for creating spawn links from parent input anchors to subagent markers.
+ */
+function findLatestInputAnchor(
+  positions: TurnEventPosition[],
+  beforeY: number,
+): TurnEventPosition | null {
+  for (let i = positions.length - 1; i >= 0; i--) {
+    const pos = positions[i];
+    if (pos.isAnchor && pos.isInput && pos.y <= beforeY) {
+      return pos;
+    }
+  }
+  return null;
+}
+
+/**
  * Layout one turn as a compact folder-indented tree.
  * Returns nodes, links, folder guides, and the Y offset for the next turn.
  */
@@ -254,7 +411,7 @@ function layoutTurn(
   turn: GraphTurn,
   originX: number,
   originY: number,
-  sessionMap: Map<string, ChildSession>,
+  _sessionMap: Map<string, ChildSession>,
   sessionId?: string,
 ): { nodes: GraphNode[]; links: GraphLink[]; spindles: TurnSpindle[]; nextY: number } {
   const nodes: GraphNode[] = [];
@@ -352,12 +509,26 @@ function layoutTurn(
         isAnchor: false,
         isInput: false,
         sessionId: ev.child_session_id,
+        parentSessionId: sessionId,
         spindleRole: "subagent",
         metadata,
+        labelAlign: "left",
         // Only set subagentTint for multi-agent (PRD R6: single agent has no tint circle)
         ...(multiSub ? { subagentTint: tint } : {}),
       };
       nodes.push(markerNode);
+
+      // Create spawn link from the latest input anchor to this marker
+      const sourceAnchor = findLatestInputAnchor(eventPositions, pos.y);
+      if (sourceAnchor) {
+        links.push({
+          source: sourceAnchor.event.event_id,
+          target: ev.event_id,
+          type: "spawn",
+          tint: multiSub ? tint : undefined,
+        });
+      }
+
       subagentIdx++;
     } else if (pos.isAnchor) {
       // Anchor node (user_input or assistant_output)
@@ -427,60 +598,8 @@ function layoutTurn(
     }
   }
 
-  // ── Handle subagent sessions (recursive) ──────────────
-  let subagentLaneIdx = 0;
-  const totalSubagents = countSubagentSessions(events);
-  let turnMaxY = eventBottom;
-
-  for (let i = 0; i < eventPositions.length; i++) {
-    const pos = eventPositions[i];
-    const ev = pos.event;
-    if (ev.kind !== "subagent_session" || !ev.child_session_id) continue;
-
-    const child = sessionMap.get(ev.child_session_id);
-    if (!child?.graph_turns) {
-      subagentLaneIdx++;
-      continue;
-    }
-
-    const multiSub = totalSubagents >= 2;
-    const tint = multiSub ? subagentTintAt(subagentLaneIdx) : "#475569";
-    const subCX = cx + CHILD_SESSION_OFFSET_X + subagentLaneIdx * CHILD_SESSION_LANE_STEP;
-    const subTop = pos.y + CHILD_SESSION_OFFSET_Y;
-
-    const childData = buildGraphFromTurns(
-      child.graph_turns,
-      child.child_sessions,
-      subCX,
-      subTop,
-      child.session_id,
-    );
-
-    nodes.push(...childData.nodes);
-    links.push(...childData.links);
-    if (childData.spindles) turnSpindles.push(...childData.spindles);
-    const childBottom = maxNodeBottom(childData.nodes);
-    if (childBottom !== null && childBottom > turnMaxY) turnMaxY = childBottom;
-
-    // Spawn link from parent marker to child's first available anchor.
-    if (childData.nodes.length > 0) {
-      const childTarget = childData.nodes.find(n => n.isInput)
-        ?? childData.nodes.find(n => n.isAnchor)
-        ?? childData.nodes[0];
-      links.push({
-        source: ev.event_id,
-        target: childTarget.id,
-        type: "spawn",
-        tint: multiSub ? tint : undefined,
-        spawnFromDx: SUBAGENT_MARKER_RADIUS + 4,
-        spawnToDx: 0,
-      });
-    }
-
-    subagentLaneIdx++;
-  }
-
-  return { nodes, links, spindles: turnSpindles, nextY: turnMaxY + TURN_GAP };
+  // ── Subagent markers are already created above; no recursion in focus mode ──
+  return { nodes, links, spindles: turnSpindles, nextY: eventBottom + TURN_GAP };
 }
 
 // ── Helpers ─────────────────────────────────────────────
@@ -488,7 +607,7 @@ function layoutTurn(
 function indentForKind(kind: string): number {
   if (kind === "reasoning") return FOLDER_INDENT_STEP;
   if (kind === "tool_call" || kind === "tool_output") return FOLDER_INDENT_STEP * 2;
-  if (kind === "subagent_session") return FOLDER_INDENT_STEP * 3;
+  if (kind === "subagent_session") return -FOLDER_INDENT_STEP * 3; // Place markers on the left of center line
   return FOLDER_INDENT_STEP;
 }
 
@@ -670,13 +789,31 @@ function textFromContent(content: unknown): string | null {
   return null;
 }
 
-function maxNodeBottom(nodes: GraphNode[]): number | null {
-  let maxY: number | null = null;
-  for (const node of nodes) {
-    const bottom = node.y + node.radius;
-    if (maxY === null || bottom > maxY) maxY = bottom;
+/** Extract the ISO timestamp string from a node's metadata (set by tooltipMetadataForEvent). */
+function nodeEventTimestamp(node: GraphNode): string | null {
+  const ts = node.metadata?.timestamp;
+  return typeof ts === "string" && ts.length > 0 ? ts : null;
+}
+
+/** Earliest event timestamp across a child session's graph turns (or null if none). */
+function childFirstEventTimestamp(child: ChildSession): string | null {
+  if (!child.graph_turns || child.graph_turns.length === 0) return null;
+  let best: number | null = null;
+  let bestTs: string | null = null;
+  for (const turn of child.graph_turns) {
+    const events = collectTurnEvents(turn);
+    for (const ev of events) {
+      const ts = ev.timestamp;
+      if (typeof ts !== "string" || ts.length === 0) continue;
+      const ms = Date.parse(ts);
+      if (Number.isNaN(ms)) continue;
+      if (best === null || ms < best) {
+        best = ms;
+        bestTs = ts;
+      }
+    }
   }
-  return maxY;
+  return bestTs;
 }
 
 function detailSort(a: TurnEvent, b: TurnEvent): number {

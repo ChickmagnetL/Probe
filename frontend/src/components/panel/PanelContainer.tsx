@@ -17,10 +17,24 @@ import { RawView } from "../raw/RawView";
 const VIEW_TABS: ViewKind[] = ["graph", "timeline", "chat", "raw"];
 
 function childDetailToGraphSession(child: ChildSessionDetail): ChildSession {
+  // Pre-compute first event timestamp for performance
+  let firstTimestamp: string | null = null;
+  if (child.events && child.events.length > 0) {
+    // Find the earliest timestamp in the child's events
+    for (const event of child.events) {
+      if (event.timestamp) {
+        if (!firstTimestamp || event.timestamp < firstTimestamp) {
+          firstTimestamp = event.timestamp;
+        }
+      }
+    }
+  }
+
   return {
     session_id: child.id,
     graph_turns: buildTurnsFromEvents(child.events),
     child_sessions: child.children?.map(childDetailToGraphSession),
+    first_event_timestamp: firstTimestamp,
   };
 }
 
@@ -185,6 +199,9 @@ function PanelViewContent({ view }: PanelViewContentProps) {
   const detail = useSessionStore((s) => s.detail);
   const selectedEventId = useSessionStore((s) => s.selectedEventId);
   const selectEvent = useSessionStore((s) => s.selectEvent);
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const fetchDetail = useSessionStore((s) => s.fetchDetail);
+  const setExpanded = useSessionStore((s) => s.setExpanded);
 
   // Timeline/Chat data: always from the currently selected session
   const sortedEvents = useMemo(() => {
@@ -200,34 +217,11 @@ function PanelViewContent({ view }: PanelViewContentProps) {
     });
   }, [detail?.events]);
 
-  // Graph data: independent from Timeline/Chat per PRD D3.
-  // When a child sub-agent is selected, Graph must continue showing the parent's
-  // merged data (parent events + all child events), not the child's own events.
-  // We use a ref to persist the last non-subagent detail for graph rendering.
-  const graphDetailRef = useRef<{
-    events: EventRow[];
-    children: ChildSessionDetail[];
-    sessionId: string;
-  } | null>(null);
-
-  // Update graphDetailRef only when the selected session is NOT a sub-agent
-  if (detail && detail.session.is_subagent !== 1) {
-    graphDetailRef.current = {
-      events: detail.events,
-      children: detail.children,
-      sessionId: detail.session.id,
-    };
-  }
-
-  const graphDetail = graphDetailRef.current ?? (detail && detail.session.is_subagent !== 1 ? {
-    events: detail.events,
-    children: detail.children,
-    sessionId: detail.session.id,
-  } : null);
-
+  // Graph data source: focus mode — always use the currently selected session (detail).
+  // When a child sub-agent is selected, Graph switches to show only that child's events + its markers.
   const graphEvents = useMemo(() => {
-    if (!graphDetail?.events) return [] as EventRow[];
-    return [...graphDetail.events].sort((a, b) => {
+    if (!detail?.events) return [] as EventRow[];
+    return [...detail.events].sort((a, b) => {
       if (!a.timestamp && !b.timestamp)
         return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
       if (!a.timestamp) return 1;
@@ -236,24 +230,35 @@ function PanelViewContent({ view }: PanelViewContentProps) {
       if (cmp !== 0) return cmp;
       return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
     });
-  }, [graphDetail?.events]);
+  }, [detail?.events]);
 
-  // R5: Convert graphDetail.children to ChildSession[] for GraphCanvas
+  // R5: Convert detail.children to ChildSession[] for GraphCanvas
   const childSessions = useMemo((): ChildSession[] | undefined => {
-    if (!graphDetail?.children || graphDetail.children.length === 0) return undefined;
-    return graphDetail.children.map(childDetailToGraphSession);
-  }, [graphDetail?.children]);
+    if (!detail?.children || detail.children.length === 0) return undefined;
+    return detail.children.map(childDetailToGraphSession);
+  }, [detail?.children]);
 
-  // selectedSessionId for session-based dimming: use the currently selected
-  // session's ID (even if it's a child), so dimming highlights the correct
-  // session in the merged graph.
+  // selectedSessionId and graphSessionId are equal in focus mode (both = current session)
   const selectedSessionId = detail?.session.id;
+  const graphSessionId = detail?.session.id;
 
   const handleNodeClick = useCallback(
-    (id: string | null) => {
+    (id: string | null, sessionId?: string, parentSessionId?: string) => {
+      // Reverse sync: a node carrying a sub-agent session id (different from
+      // the current session) selects that sub-agent in the session list.
+      // Guarded against the currently active session to skip redundant
+      // refetches and avoid re-triggering the list→graph jump (which would
+      // otherwise fire when selectedSessionId changes back through detail).
+      if (sessionId && sessionId !== graphSessionId && sessionId !== activeSessionId) {
+        fetchDetail(sessionId);
+        // D6: When focusing a sub-agent from Graph, auto-expand its parent row in the list
+        if (parentSessionId) {
+          setExpanded(parentSessionId, true);
+        }
+      }
       selectEvent(id);
     },
-    [selectEvent],
+    [selectEvent, fetchDetail, setExpanded, activeSessionId, graphSessionId],
   );
 
   const handleSelect = useCallback(
@@ -269,7 +274,7 @@ function PanelViewContent({ view }: PanelViewContentProps) {
         events={graphEvents}
         childSessions={childSessions}
         selectedEventId={selectedEventId}
-        graphSessionId={graphDetail?.sessionId}
+        graphSessionId={graphSessionId}
         selectedSessionId={selectedSessionId}
         onNodeClick={handleNodeClick}
       />
