@@ -1,6 +1,19 @@
 import type { EventRow, TokenUsage } from "../../ipc/types";
 import { buildEventMetadataCards } from "../../lib/event-metadata-cards";
 
+function stringOrNull(v: unknown): string | null {
+  if (typeof v === "string" && v.length > 0) return v;
+  return null;
+}
+
+function formatDur(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const min = Math.floor(ms / 60_000);
+  const sec = ((ms % 60_000) / 1000).toFixed(0);
+  return `${min}m ${sec}s`;
+}
+
 // ── MetaCard ─────────────────────────────────────────────
 
 export function MetaCard({ label, value }: { label: string; value: string }) {
@@ -36,7 +49,8 @@ export function ContentRenderer({ event }: { event: EventRow }) {
   const displayContent = content ?? content_preview;
 
   if (kind === "tool_call") return <ToolCallContent event={event} />;
-  if (kind === "tool_output") return <ToolOutputContent content={displayContent ?? ""} />;
+  if (kind === "tool_output") return <ToolOutputContent event={event} />;
+  if (kind === "tool_event") return <ToolEventContent event={event} />;
   if (!displayContent) return null;
   if (role === "user") return <PlainContent content={displayContent} />;
   if (role === "assistant" || kind.includes("assistant"))
@@ -171,8 +185,94 @@ function PlainContent({ content }: { content: string }) {
   );
 }
 
-function ToolOutputContent({ content }: { content: string }) {
+function tryParseOutput(content: string): { fields: Record<string, string>; body: string | null } | null {
+  // 1) Try JSON first — handles bare objects, arrays, and double-encoded strings.
+  try {
+    let parsed: unknown = JSON.parse(content);
+    if (typeof parsed === "string") {
+      try { parsed = JSON.parse(parsed); } catch { /* single string */ }
+    }
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      const fields: Record<string, string> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        fields[k] = valueToString(v);
+      }
+      return { fields, body: null };
+    }
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const texts: string[] = [];
+      for (const item of parsed) {
+        if (item && typeof item === "object" && "text" in item && typeof item.text === "string") {
+          texts.push(item.text);
+        }
+      }
+      if (texts.length > 0) return { fields: { output: texts.join("\n") }, body: null };
+      // Non-text arrays: show as JSON
+      return { fields: { result: JSON.stringify(parsed, null, 2) }, body: null };
+    }
+    // Parsed value is a primitive (number, boolean, etc.)
+    if (parsed !== null && parsed !== undefined) {
+      return { fields: { value: String(parsed) }, body: null };
+    }
+  } catch { /* not valid JSON */ }
+
+  // 2) Text-based key-value header followed by "Output:\n<body>".
+  // 87.8% of tool_output events use this format:
+  //   Chunk ID: e15c06
+  //   Wall time: 0.0000 seconds
+  //   Output:
+  //   <actual body text>
+  const outputSplit = splitAtLastOutputMarker(content);
+  const headerText = outputSplit ? outputSplit[0] : content;
+  const bodyText = outputSplit ? outputSplit[1] : null;
+
+  const fields: Record<string, string> = {};
+  const headerLines = headerText.split("\n");
+  let pendingKey: string | null = null;
+
+  for (const line of headerLines) {
+    const match = line.match(/^([A-Za-z][\w\s]*?):\s*(.*)/);
+    if (match) {
+      if (pendingKey) fields[pendingKey] = fields[pendingKey]?.trimEnd() || "";
+      pendingKey = null;
+      const key = match[1].trim();
+      const val = match[2].trim();
+      if (val) fields[key] = val;
+      else pendingKey = key; // multi-line value possible (rare)
+    } else if (pendingKey) {
+      fields[pendingKey] = (fields[pendingKey] || "") + line + "\n";
+    }
+  }
+  if (pendingKey) fields[pendingKey] = (fields[pendingKey] || "").trimEnd() || "";
+
+  const body = bodyText?.trim() || null;
+  if (Object.keys(fields).length > 0) return { fields, body };
+  if (body) return { fields: {}, body };
+  return null;
+}
+
+/** Split content at the last "Output:\n" marker. Returns [header, body] or null. */
+function splitAtLastOutputMarker(content: string): [string, string] | null {
+  // Find the last occurrence of a line that is exactly "Output:" (followed by \n or end)
+  const idx = content.lastIndexOf("\nOutput:\n");
+  if (idx !== -1) {
+    return [content.slice(0, idx), content.slice(idx + 9)]; // 9 = "\nOutput:\n".length
+  }
+  // Content starts with "Output:\n"
+  if (content.startsWith("Output:\n")) {
+    return ["Output:", content.slice(8)];
+  }
+  return null;
+}
+
+function ToolOutputContent({ event }: { event: EventRow }) {
+  const { content } = event;
+
   if (!content) return null;
+
+  const parsed = tryParseOutput(content);
+
   return (
     <div className="rounded-md border border-border bg-card overflow-hidden">
       <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border-b border-border">
@@ -193,9 +293,100 @@ function ToolOutputContent({ content }: { content: string }) {
           Output
         </span>
       </div>
-      <pre className="text-xs text-card-foreground whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed p-3.5">
-        {content}
-      </pre>
+      {parsed ? (
+        <>
+          <div className="p-3.5 space-y-1.5">
+            {Object.entries(parsed.fields).map(([key, val]) => (
+              <div key={key} className="flex gap-2 text-xs">
+                <span className="text-muted-foreground font-medium shrink-0">
+                  {key}:
+                </span>
+                <span className="text-card-foreground font-mono break-all">
+                  {val}
+                </span>
+              </div>
+            ))}
+          </div>
+          {parsed.body && (
+            <pre className="text-xs text-card-foreground whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed p-3.5 border-t border-border">
+              {parsed.body}
+            </pre>
+          )}
+        </>
+      ) : (
+        <pre className="text-xs text-card-foreground whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed p-3.5">
+          {content}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function valueToString(v: unknown): string {
+  if (typeof v === "string") return v;
+  return JSON.stringify(v);
+}
+
+function ToolEventContent({ event }: { event: EventRow }) {
+  const { metadata } = event;
+  const meta = parseRecord(metadata);
+
+  const toolName = stringOrNull(meta.tool_name) ?? stringOrNull(meta.name);
+  const server = stringOrNull(meta.server);
+  const status = stringOrNull(meta.status);
+  const durMs = typeof meta.duration_ms === "number" ? meta.duration_ms : null;
+  const invocation = typeof meta.invocation === "object" && meta.invocation !== null
+    ? (meta.invocation as Record<string, unknown>)
+    : null;
+
+  // Flatten important info into one continuous list of key-value rows.
+  // Omit call_id (internal detail); omit raw output (available in Show Detail).
+  const rows: Array<[string, string]> = [];
+  if (server) rows.push(["server", server]);
+  if (toolName) rows.push(["tool", toolName]);
+  if (durMs !== null) rows.push(["duration", formatDur(durMs)]);
+  if (status) rows.push(["status", status]);
+
+  // Flatten invocation input args into the same row block, like ToolCallContent
+  const invInput = invocation?.input ?? invocation?.arguments ?? invocation?.args;
+  if (typeof invInput === "object" && invInput !== null && !Array.isArray(invInput)) {
+    for (const [k, v] of Object.entries(invInput as Record<string, unknown>)) {
+      rows.push([k, valueToString(v)]);
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border-b border-border">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-accent shrink-0"
+        >
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+        </svg>
+        <span className="text-xs font-semibold text-card-foreground">
+          {toolName || "MCP Tool Call"}
+        </span>
+      </div>
+      <div className="p-3.5 space-y-1.5">
+        {rows.map(([key, val]) => (
+          <div key={key} className="flex gap-2 text-xs">
+            <span className="text-muted-foreground font-medium shrink-0">
+              {key}:
+            </span>
+            <span className="text-card-foreground font-mono break-all">
+              {val}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
