@@ -17,7 +17,12 @@ pub fn run() {
         ])
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
+                // Delay focus to ensure window is fully initialized on macOS
+                let window_clone = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    let _ = window_clone.set_focus();
+                });
             }
             Ok(())
         })
