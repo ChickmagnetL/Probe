@@ -75,6 +75,9 @@ export function GraphCanvas({
 
   const dirtyRef = useRef(true);
 
+  // Track previous values to detect what changed
+  const prevDepsRef = useRef({ graphSessionId, turnsLength: 0 });
+
   // Stable refs for draw loop
   const selectedEventIdRef = useRef(selectedEventId);
   const labelsVisibleRef = useRef(labelsVisible);
@@ -110,6 +113,15 @@ export function GraphCanvas({
       return;
     }
 
+    // Check if only hiddenKinds changed (not session or data)
+    const prevDeps = prevDepsRef.current;
+    const sessionChanged = prevDeps.graphSessionId !== graphSessionId;
+    const turnsChanged = prevDeps.turnsLength !== turns.length;
+    const shouldResetView = sessionChanged || turnsChanged;
+
+    // Update tracked dependencies
+    prevDepsRef.current = { graphSessionId, turnsLength: turns.length };
+
     // Include hiddenKinds in cache key so layout rebuilds when filters change
     const hiddenKindsKey = Array.from(hiddenKinds).sort().join(',');
     const cacheKey = `${turns.length}-${turns[0]?.input?.event_id ?? 'none'}-${turns[turns.length - 1]?.output?.event_id ?? 'none'}-${childSessions?.length ?? 0}-${hiddenKindsKey}`;
@@ -133,7 +145,10 @@ export function GraphCanvas({
 
     layoutCacheRef.current = { key: cacheKey, data: newData };
 
-    resetGraphView(newData);
+    // Only reset view when session or data changes, not when filtering
+    if (shouldResetView) {
+      resetGraphView(newData);
+    }
 
     dataRef.current = newData;
     setInputAxisItems(buildInputAxisItems(newData.nodes));
