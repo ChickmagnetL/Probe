@@ -21,7 +21,7 @@ export function GraphCanvasControls({
 }: GraphCanvasControlsProps) {
   return (
     <>
-      <div className="pointer-events-auto absolute bottom-4 right-4 glass-card rounded-xl p-3">
+      <div className="pointer-events-auto absolute top-4 right-4 glass-card rounded-xl p-3">
         <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">Legend</div>
         <div className="flex flex-col gap-2 text-xs">
           {visibleKinds.map(item => (

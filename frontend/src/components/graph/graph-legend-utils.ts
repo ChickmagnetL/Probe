@@ -48,10 +48,15 @@ export interface LegendItem {
  * Extract unique node kinds from the graph data and sort them by semantic priority.
  * Returns a sample node for each kind to enable eventTypeLabel() resolution.
  * Used to dynamically populate the legend with only the node types present in the current session.
+ * Excludes user_input and assistant_output as they are anchor nodes not meant for filtering.
  */
 export function extractVisibleKinds(nodes: GraphNode[]): LegendItem[] {
   const kindMap = new Map<string, GraphNode>();
   for (const node of nodes) {
+    // Skip anchor nodes (user input and assistant output)
+    if (node.kind === "user_input" || node.kind === "assistant_output") {
+      continue;
+    }
     if (!kindMap.has(node.kind)) {
       kindMap.set(node.kind, node);
     }
