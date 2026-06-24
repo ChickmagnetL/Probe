@@ -17,7 +17,7 @@ import { GraphInputAxis } from "./GraphInputAxis";
 import { GraphCanvasControls } from "./GraphCanvasControls";
 import { buildInputAxisItems, centerGraphNodeInViewport, type InputAxisItem } from "./graph-input-axis";
 import { computeResetViewTransform, graphBounds, type GraphViewportSize } from "./graph-viewport";
-import { extractVisibleKinds } from "./graph-legend-utils";
+import { extractVisibleKinds, type LegendItem } from "./graph-legend-utils";
 
 interface GraphCanvasProps {
   graphTurns?: GraphTurn[];
@@ -60,7 +60,7 @@ export function GraphCanvas({
   const [tooltipNode, setTooltipNode] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
   const [inputAxisItems, setInputAxisItems] = useState<InputAxisItem[]>([]);
   const [hiddenKinds, setHiddenKinds] = useState<Set<string>>(new Set());
-  const [visibleKinds, setVisibleKinds] = useState<string[]>([]);
+  const [visibleKinds, setVisibleKinds] = useState<LegendItem[]>([]);
 
   // Hover via ref — no React re-render
   const hoveredNodeIdRef = useRef<string | null>(null);

@@ -39,23 +39,35 @@ const KIND_SORT_ORDER: Record<string, number> = {
 
 const DEFAULT_PRIORITY = 99;
 
+export interface LegendItem {
+  kind: string;
+  sampleNode: GraphNode;
+}
+
 /**
  * Extract unique node kinds from the graph data and sort them by semantic priority.
+ * Returns a sample node for each kind to enable eventTypeLabel() resolution.
  * Used to dynamically populate the legend with only the node types present in the current session.
  */
-export function extractVisibleKinds(nodes: GraphNode[]): string[] {
-  const kindSet = new Set<string>();
+export function extractVisibleKinds(nodes: GraphNode[]): LegendItem[] {
+  const kindMap = new Map<string, GraphNode>();
   for (const node of nodes) {
-    kindSet.add(node.kind);
+    if (!kindMap.has(node.kind)) {
+      kindMap.set(node.kind, node);
+    }
   }
 
-  const kinds = Array.from(kindSet);
-  kinds.sort((a, b) => {
-    const prioA = KIND_SORT_ORDER[a] ?? DEFAULT_PRIORITY;
-    const prioB = KIND_SORT_ORDER[b] ?? DEFAULT_PRIORITY;
+  const items = Array.from(kindMap.entries()).map(([kind, sampleNode]) => ({
+    kind,
+    sampleNode,
+  }));
+
+  items.sort((a, b) => {
+    const prioA = KIND_SORT_ORDER[a.kind] ?? DEFAULT_PRIORITY;
+    const prioB = KIND_SORT_ORDER[b.kind] ?? DEFAULT_PRIORITY;
     if (prioA !== prioB) return prioA - prioB;
-    return a.localeCompare(b); // Same priority: alphabetical
+    return a.kind.localeCompare(b.kind); // Same priority: alphabetical
   });
 
-  return kinds;
+  return items;
 }

@@ -1,11 +1,12 @@
 import { kindColor } from "../../lib/color";
-import { kindLabel } from "./graph-labels";
+import { eventTypeLabel } from "./graph-labels";
+import type { LegendItem } from "./graph-legend-utils";
 
 interface GraphCanvasControlsProps {
   labelsVisible: boolean;
   onResetView: () => void;
   onToggleLabels: () => void;
-  visibleKinds: string[];
+  visibleKinds: LegendItem[];
   hiddenKinds: Set<string>;
   onToggleKind: (kind: string) => void;
 }
@@ -23,13 +24,13 @@ export function GraphCanvasControls({
       <div className="pointer-events-auto absolute bottom-4 right-4 glass-card rounded-xl p-3">
         <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">Legend</div>
         <div className="flex flex-col gap-2 text-xs">
-          {visibleKinds.map(kind => (
+          {visibleKinds.map(item => (
             <LegendDot
-              key={kind}
-              color={kindColor(kind)}
-              label={kindLabel(kind)}
-              isHidden={hiddenKinds.has(kind)}
-              onClick={() => onToggleKind(kind)}
+              key={item.kind}
+              color={kindColor(item.kind)}
+              label={eventTypeLabel({ kind: item.kind, metadata: item.sampleNode.metadata })}
+              isHidden={hiddenKinds.has(item.kind)}
+              onClick={() => onToggleKind(item.kind)}
             />
           ))}
         </div>
