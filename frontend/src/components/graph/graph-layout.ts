@@ -1,5 +1,5 @@
 import { kindColor } from "../../lib/color";
-import { kindLabel, eventTypeLabel } from "./graph-labels";
+import { eventTypeLabel } from "./graph-labels";
 
 // ── Interfaces ──────────────────────────────────────────
 
@@ -294,7 +294,7 @@ export function buildGraphFromTurns(
       const markerNode: GraphNode = {
         id: markerId,
         eventId: markerId,
-        label: kindLabel("subagent_session"),
+        label: eventTypeLabel({ kind: "subagent_session", metadata: undefined }),
         kind: "subagent_session",
         x: startX + indentForKind("subagent_session"),
         y: markerY,
@@ -536,7 +536,7 @@ function layoutTurn(
       const node: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
-        label: kindLabel(ev.kind),
+        label: eventTypeLabel(ev),
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
@@ -990,7 +990,7 @@ function toTurnEvent(ev: RawEvent): TurnEvent {
   return {
     event_id: ev.id,
     kind: ev.kind,
-    title: kindLabel(ev.kind),
+    title: eventTypeLabel(ev),
     summary: (ev as any).content_preview?.slice(0, 80) ?? ev.content?.slice(0, 80) ?? ev.kind,
     child_session_id: childSessionId,
     timestamp: ev.timestamp ?? undefined,
