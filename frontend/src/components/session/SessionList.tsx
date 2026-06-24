@@ -25,15 +25,15 @@ const UNKNOWN_GROUP_KEY = "__unknown__";
 const UNKNOWN_GROUP_NAME = "Unknown";
 
 // Date bucket order (newest first). Sessions fall into the first matching
-// bucket based on their start_time vs the current calendar day. "本周" uses a
-// rolling 7-day window excluding 今天/昨天 — simple and intuitive enough.
+// bucket based on their start_time vs the current calendar day. "This Week" uses a
+// rolling 7-day window excluding Today/Yesterday.
 type BucketKey = "today" | "yesterday" | "this_week" | "older";
 const BUCKET_ORDER: BucketKey[] = ["today", "yesterday", "this_week", "older"];
 const BUCKET_LABELS: Record<BucketKey, string> = {
-  today: "今天",
-  yesterday: "昨天",
-  this_week: "本周",
-  older: "更早",
+  today: "Today",
+  yesterday: "Yesterday",
+  this_week: "This Week",
+  older: "Older",
 };
 
 function startOfDay(d: Date): number {

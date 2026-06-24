@@ -163,7 +163,7 @@ export function sessionPayload(
     file_name: session.file_name,
     source_record: session.source_record,
     source_raw_text: session.source_raw_text,
-    source_label: session.file_name ?? "主线程占位视图",
+    source_label: session.file_name ?? "",
     parent_session_id: session.parent_session_id,
     is_subagent: session.is_subagent,
     is_synthetic: session.is_synthetic,
@@ -222,12 +222,12 @@ export function serializeTree(
 // ── Helpers ─────────────────────────────────────────────
 
 function displayName(session: SessionBuild): string {
-  if (session.is_synthetic) return `主代理 ${shortId(session.session_id)}`;
+  if (session.is_synthetic) return `Main agent ${shortId(session.session_id)}`;
   if (session.agent_role === "guardian") return "Guardian";
   if (session.agent_nickname && session.agent_role) return `${session.agent_nickname} · ${session.agent_role}`;
   if (session.agent_nickname) return session.agent_nickname;
-  if (session.is_subagent) return `子代理 ${shortId(session.session_id)}`;
-  return `会话 ${shortId(session.session_id)}`;
+  if (session.is_subagent) return `Sub-agent ${shortId(session.session_id)}`;
+  return `Session ${shortId(session.session_id)}`;
 }
 
 function sortedChildIds(session: SessionBuild): string[] {

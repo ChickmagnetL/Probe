@@ -284,10 +284,6 @@ function attachUsageBadge(events: JSONDict[], ownMetrics: JSONDict): void {
     ...totalUsage,
     last_token_usage: lastUsage,
     total_token_usage: totalUsage,
-    label: totalUsage.input_tokens || totalUsage.output_tokens
-      ? `${totalUsage.input_tokens} 输入 / ${totalUsage.output_tokens} 输出`
-      : `${totalUsage.total_tokens} 总计`,
-    note: "这组 usage 来自 `event_msg.token_count`。Last Call 是 last_token_usage，Session Total 是 total_token_usage；它们只作为 AI 回复详情统计，不作为独立工作节点串进链路里。",
   };
   const taskElapsed = ownMetrics.task_elapsed_sec;
   if (typeof taskElapsed === "number") {
