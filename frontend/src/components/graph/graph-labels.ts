@@ -52,6 +52,11 @@ function strField(obj: Record<string, unknown> | null, key: string): string | nu
  * Falls back to kindLabel(kind) if no original type is found.
  */
 export function eventTypeLabel(src: LabelSource): string {
+  // Special case: always use friendly labels for user input and assistant output
+  if (src.kind === "user_input" || src.kind === "assistant_output") {
+    return kindLabel(src.kind);
+  }
+
   const raw = tryParseMeta(src.metadata);
   const rawMeta = raw ? tryParseMeta(raw.metadata) : null;
   const sourceRecord = tryParseMeta(rawMeta?.source_record)
