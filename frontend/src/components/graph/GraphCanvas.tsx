@@ -17,6 +17,7 @@ import { GraphInputAxis } from "./GraphInputAxis";
 import { GraphCanvasControls } from "./GraphCanvasControls";
 import { buildInputAxisItems, centerGraphNodeInViewport, type InputAxisItem } from "./graph-input-axis";
 import { computeResetViewTransform, graphBounds, type GraphViewportSize } from "./graph-viewport";
+import { extractVisibleKinds } from "./graph-legend-utils";
 
 interface GraphCanvasProps {
   graphTurns?: GraphTurn[];
@@ -58,6 +59,8 @@ export function GraphCanvas({
   const [labelsVisible, setLabelsVisible] = useState(true);
   const [tooltipNode, setTooltipNode] = useState<{ node: GraphNode; x: number; y: number } | null>(null);
   const [inputAxisItems, setInputAxisItems] = useState<InputAxisItem[]>([]);
+  const [hiddenKinds, setHiddenKinds] = useState<Set<string>>(new Set());
+  const [visibleKinds, setVisibleKinds] = useState<string[]>([]);
 
   // Hover via ref — no React re-render
   const hoveredNodeIdRef = useRef<string | null>(null);
@@ -76,9 +79,11 @@ export function GraphCanvas({
   const selectedEventIdRef = useRef(selectedEventId);
   const labelsVisibleRef = useRef(labelsVisible);
   const selectedSessionIdRef = useRef(selectedSessionId);
+  const hiddenKindsRef = useRef(hiddenKinds);
   selectedEventIdRef.current = selectedEventId;
   labelsVisibleRef.current = labelsVisible;
   selectedSessionIdRef.current = selectedSessionId;
+  hiddenKindsRef.current = hiddenKinds;
 
   const resetGraphView = useCallback((data?: GraphData) => {
     const d = data ?? dataRef.current;
@@ -130,6 +135,11 @@ export function GraphCanvas({
 
     dataRef.current = newData;
     setInputAxisItems(buildInputAxisItems(newData.nodes));
+
+    // Extract visible kinds for legend
+    const kinds = extractVisibleKinds(newData.nodes);
+    setVisibleKinds(kinds);
+
     dirtyRef.current = true;
     cacheDirtyRef.current = true;
   }, [graphTurns, events, childSessions, graphSessionId, resetGraphView]);
@@ -202,6 +212,11 @@ export function GraphCanvas({
     dirtyRef.current = true;
   }, [labelsVisible]);
 
+  // Reset filter state when session changes
+  useEffect(() => {
+    setHiddenKinds(new Set());
+  }, [graphSessionId]);
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const data = dataRef.current;
@@ -217,6 +232,7 @@ export function GraphCanvas({
     const selectedNodeId = selectedEventIdRef.current;
     const labelsVisible = labelsVisibleRef.current;
     const selectedSessionId = selectedSessionIdRef.current;
+    const hiddenKinds = hiddenKindsRef.current;
 
     const viewport: ViewportBounds = {
       x: -t.x / t.k,
@@ -250,7 +266,7 @@ export function GraphCanvas({
         selectedNodeId,
         labelsVisible,
       };
-      renderLODLayer(ctx, data, state, rect.width, rect.height, viewport, highlightIds);
+      renderLODLayer(ctx, data, state, rect.width, rect.height, viewport, highlightIds, hiddenKinds);
       return;
     }
 
@@ -275,7 +291,7 @@ export function GraphCanvas({
         offCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         offCtx.clearRect(0, 0, w, h);
         offCtx.translate(-bounds.minX, -bounds.minY);
-        renderStaticLayer(offCtx, data, selectedNodeId, highlightIds);
+        renderStaticLayer(offCtx, data, selectedNodeId, highlightIds, hiddenKinds);
       }
       cacheDirtyRef.current = false;
     }
@@ -311,10 +327,10 @@ export function GraphCanvas({
     ctx.restore();
 
     // Labels rendered directly on main canvas for crisp text
-    renderLabels(ctx, data, t, selectedNodeId, hoveredNodeId, labelsVisible, viewport, highlightIds);
+    renderLabels(ctx, data, t, selectedNodeId, hoveredNodeId, labelsVisible, viewport, highlightIds, hiddenKinds);
 
     // Dynamic hover overlay
-    renderDynamicOverlay(ctx, data, t, hoveredNodeId ?? jumpHighlightedNodeId);
+    renderDynamicOverlay(ctx, data, t, hoveredNodeId ?? jumpHighlightedNodeId, hiddenKinds);
   }, []);
 
   useEffect(() => {
@@ -431,6 +447,20 @@ export function GraphCanvas({
     setLabelsVisible((v) => !v);
   }, []);
 
+  const toggleKind = useCallback((kind: string) => {
+    setHiddenKinds(prev => {
+      const next = new Set(prev);
+      if (next.has(kind)) {
+        next.delete(kind);
+      } else {
+        next.add(kind);
+      }
+      return next;
+    });
+    cacheDirtyRef.current = true;
+    dirtyRef.current = true;
+  }, []);
+
   const jumpToInputNode = useCallback((node: GraphNode) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -479,6 +509,9 @@ export function GraphCanvas({
           labelsVisible={labelsVisible}
           onResetView={resetView}
           onToggleLabels={toggleLabels}
+          visibleKinds={visibleKinds}
+          hiddenKinds={hiddenKinds}
+          onToggleKind={toggleKind}
         />
       </div>
     </div>

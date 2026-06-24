@@ -1,24 +1,37 @@
+import { kindColor } from "../../lib/color";
+import { kindLabel } from "./graph-labels";
+
 interface GraphCanvasControlsProps {
   labelsVisible: boolean;
   onResetView: () => void;
   onToggleLabels: () => void;
+  visibleKinds: string[];
+  hiddenKinds: Set<string>;
+  onToggleKind: (kind: string) => void;
 }
 
 export function GraphCanvasControls({
   labelsVisible,
   onResetView,
   onToggleLabels,
+  visibleKinds,
+  hiddenKinds,
+  onToggleKind,
 }: GraphCanvasControlsProps) {
   return (
     <>
-      <div className="pointer-events-auto absolute top-4 right-4 glass-card rounded-xl p-3">
+      <div className="pointer-events-auto absolute bottom-4 right-4 glass-card rounded-xl p-3">
         <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">Legend</div>
         <div className="flex flex-col gap-2 text-xs">
-          <LegendDot color="#3b82f6" label="Input (anchor)" />
-          <LegendDot color="#10b981" label="Output (anchor)" />
-          <LegendDot color="#f59e0b" label="Tool call" small />
-          <LegendDot color="#a855f7" label="Tool result" small />
-          <LegendDot color="#6b7280" label="Reasoning" small />
+          {visibleKinds.map(kind => (
+            <LegendDot
+              key={kind}
+              color={kindColor(kind)}
+              label={kindLabel(kind)}
+              isHidden={hiddenKinds.has(kind)}
+              onClick={() => onToggleKind(kind)}
+            />
+          ))}
         </div>
       </div>
 
@@ -64,17 +77,25 @@ export function GraphCanvasControls({
 interface LegendDotProps {
   color: string;
   label: string;
-  small?: boolean;
+  isHidden: boolean;
+  onClick: () => void;
 }
 
-function LegendDot({ color, label, small }: LegendDotProps) {
+function LegendDot({ color, label, isHidden, onClick }: LegendDotProps) {
   return (
-    <div className="flex items-center gap-2 text-card-foreground">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`${isHidden ? "Show" : "Hide"} ${label} nodes`}
+      className="flex items-center gap-2 text-left text-card-foreground cursor-pointer hover:opacity-80 transition-opacity"
+    >
       <div
-        className={`rounded-full ${small ? "w-1.5 h-1.5" : "w-2.5 h-2.5"}`}
-        style={{ backgroundColor: color }}
+        className={`rounded-full w-2.5 h-2.5 ${isHidden ? "border-2 bg-transparent" : ""}`}
+        style={isHidden ? { borderColor: color } : { backgroundColor: color }}
       />
-      <span className="text-xs font-medium">{label}</span>
-    </div>
+      <span className={`text-xs font-medium ${isHidden ? "opacity-50" : ""}`}>
+        {label}
+      </span>
+    </button>
   );
 }

@@ -195,8 +195,10 @@ export function renderStaticLayer(
   data: GraphData,
   selectedNodeId: string | null,
   highlightIds?: Set<string> | null,
+  hiddenKinds?: Set<string>,
 ) {
   const { nodes, links, nodeMap, adjacencyMap, spindles } = data;
+  const hidden = hiddenKinds ?? new Set();
 
   const focusId = selectedNodeId;
   const connectedIds = highlightIds ?? (() => {
@@ -221,6 +223,8 @@ export function renderStaticLayer(
     const src = nodeMap.get(link.source);
     const tgt = nodeMap.get(link.target);
     if (!src || !tgt) continue;
+    // Skip links connected to hidden nodes
+    if (hidden.has(src.kind) || hidden.has(tgt.kind)) continue;
     const dimmed = isDimming && !connectedIds.has(link.source) && !connectedIds.has(link.target);
     const key = `${link.type}_${dimmed ? 1 : 0}`;
     let arr = batches.get(key);
@@ -294,6 +298,8 @@ export function renderStaticLayer(
 
   // ── Draw nodes ────────────────────────────────────────
   for (const node of nodes) {
+    // Skip hidden nodes
+    if (hidden.has(node.kind)) continue;
     const dimmed = isDimming && !connectedIds.has(node.id);
     const isSelected = node.id === selectedNodeId;
     const r = node.radius;
@@ -354,10 +360,12 @@ export function renderLabels(
   labelsVisible: boolean,
   viewport: ViewportBounds,
   highlightIds?: Set<string> | null,
+  hiddenKinds?: Set<string>,
 ) {
   if (!labelsVisible || transform.k < 0.5) return;
 
   const { nodes, adjacencyMap } = data;
+  const hidden = hiddenKinds ?? new Set();
   const connectedIds = highlightIds ?? (() => {
     const ids = new Set<string>();
     const focusId = hoveredNodeId ?? selectedNodeId;
@@ -375,6 +383,8 @@ export function renderLabels(
   ctx.scale(transform.k, transform.k);
 
   for (const node of nodes) {
+    // Skip hidden nodes
+    if (hidden.has(node.kind)) continue;
     if (!isNodeLabelInViewport(node, viewport)) continue;
     const dimmed = isDimming && !connectedIds.has(node.id);
     drawNodeLabel(ctx, node, dimmed);
@@ -396,9 +406,11 @@ export function renderLODLayer(
   height: number,
   viewport: ViewportBounds,
   highlightIds?: Set<string> | null,
+  hiddenKinds?: Set<string>,
 ) {
   const { transform, hoveredNodeId, selectedNodeId, labelsVisible } = state;
   const { nodes, links, nodeMap, adjacencyMap, spindles } = data;
+  const hidden = hiddenKinds ?? new Set();
 
   ctx.clearRect(0, 0, width, height);
   ctx.save();
@@ -431,6 +443,8 @@ export function renderLODLayer(
     const src = nodeMap.get(link.source);
     const tgt = nodeMap.get(link.target);
     if (!src || !tgt) continue;
+    // Skip links connected to hidden nodes
+    if (hidden.has(src.kind) || hidden.has(tgt.kind)) continue;
     if (!isLinkInViewport(src.x, src.y, tgt.x, tgt.y, vp)) continue;
     const dimmed = isDimming && !connectedIds.has(link.source) && !connectedIds.has(link.target);
     const key = `${link.type}_${dimmed ? 1 : 0}`;
@@ -505,6 +519,8 @@ export function renderLODLayer(
 
   // Nodes
   for (const node of nodes) {
+    // Skip hidden nodes
+    if (hidden.has(node.kind)) continue;
     if (!isInViewport(node.x, node.y, node.radius, vp)) continue;
 
     const dimmed = isDimming && !connectedIds.has(node.id);
@@ -581,12 +597,17 @@ export function renderDynamicOverlay(
   data: GraphData,
   transform: { x: number; y: number; k: number },
   hoveredNodeId: string | null,
+  hiddenKinds?: Set<string>,
 ) {
   if (!hoveredNodeId) return;
 
   const { nodes, nodeMap, adjacencyMap } = data;
   const node = nodeMap.get(hoveredNodeId);
   if (!node) return;
+
+  const hidden = hiddenKinds ?? new Set();
+  // Don't render hover overlay for hidden nodes
+  if (hidden.has(node.kind)) return;
 
   const connectedIds = new Set<string>([hoveredNodeId]);
   const adj = adjacencyMap.get(hoveredNodeId);
@@ -598,6 +619,8 @@ export function renderDynamicOverlay(
 
   // Dim non-connected nodes
   for (const n of nodes) {
+    // Skip hidden nodes
+    if (hidden.has(n.kind)) continue;
     if (connectedIds.has(n.id)) continue;
     ctx.beginPath();
     ctx.arc(n.x, n.y, n.radius + 1, 0, Math.PI * 2);
