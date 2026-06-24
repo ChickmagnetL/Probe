@@ -110,7 +110,9 @@ export function GraphCanvas({
       return;
     }
 
-    const cacheKey = `${turns.length}-${turns[0]?.input?.event_id ?? 'none'}-${turns[turns.length - 1]?.output?.event_id ?? 'none'}-${childSessions?.length ?? 0}`;
+    // Include hiddenKinds in cache key so layout rebuilds when filters change
+    const hiddenKindsKey = Array.from(hiddenKinds).sort().join(',');
+    const cacheKey = `${turns.length}-${turns[0]?.input?.event_id ?? 'none'}-${turns[turns.length - 1]?.output?.event_id ?? 'none'}-${childSessions?.length ?? 0}-${hiddenKindsKey}`;
     if (layoutCacheRef.current?.key === cacheKey && layoutCacheRef.current.data) {
       const cached = layoutCacheRef.current.data;
       dataRef.current = cached;
@@ -120,7 +122,7 @@ export function GraphCanvas({
       return;
     }
 
-    const result = buildGraphFromTurns(turns, childSessions, undefined, undefined, graphSessionId);
+    const result = buildGraphFromTurns(turns, childSessions, undefined, undefined, graphSessionId, hiddenKinds);
     const newData: GraphData = {
       nodes: result.nodes,
       links: result.links,
@@ -136,13 +138,17 @@ export function GraphCanvas({
     dataRef.current = newData;
     setInputAxisItems(buildInputAxisItems(newData.nodes));
 
-    // Extract visible kinds for legend
-    const kinds = extractVisibleKinds(newData.nodes);
+    // Extract visible kinds for legend (from full node list before filtering)
+    // We need to extract from the unfiltered data so legend shows all available types
+    const unfilteredResult = hiddenKinds.size > 0
+      ? buildGraphFromTurns(turns, childSessions, undefined, undefined, graphSessionId, new Set())
+      : result;
+    const kinds = extractVisibleKinds(unfilteredResult.nodes);
     setVisibleKinds(kinds);
 
     dirtyRef.current = true;
     cacheDirtyRef.current = true;
-  }, [graphTurns, events, childSessions, graphSessionId, resetGraphView]);
+  }, [graphTurns, events, childSessions, graphSessionId, resetGraphView, hiddenKinds]);
 
   // Invalidate cache on selection change & animate to selected node
   useEffect(() => {

@@ -170,6 +170,7 @@ export function buildGraphFromTurns(
   startX = PADDING,
   startY = PADDING,
   sessionId?: string,
+  hiddenKinds?: Set<string>,
 ): GraphData & { totalWidth: number; totalHeight: number } {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
@@ -188,7 +189,7 @@ export function buildGraphFromTurns(
   let lastAnchorId: string | null = null;
 
   for (const turn of turns) {
-    const result = layoutTurn(turn, startX, currentY, sessionMap, sessionId);
+    const result = layoutTurn(turn, startX, currentY, sessionMap, sessionId, hiddenKinds);
     const mainSpindle = result.spindles[0];
     // Link previous turn's anchor to this turn's first main-spine anchor.
     if (lastAnchorId && mainSpindle) {
@@ -413,13 +414,27 @@ function layoutTurn(
   originY: number,
   _sessionMap: Map<string, ChildSession>,
   sessionId?: string,
+  hiddenKinds?: Set<string>,
 ): { nodes: GraphNode[]; links: GraphLink[]; spindles: TurnSpindle[]; nextY: number } {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
   const turnSpindles: TurnSpindle[] = [];
+  const hidden = hiddenKinds ?? new Set();
 
   const events = collectTurnEvents(turn);
   if (events.length === 0) {
+    return { nodes, links, spindles: turnSpindles, nextY: originY + TURN_GAP };
+  }
+
+  // Filter out hidden events (except anchors - user_input and assistant_output should never be hidden)
+  const visibleEvents = events.filter(ev => {
+    // Always show anchor nodes
+    if (ev.kind === "user_input" || ev.kind === "assistant_output") return true;
+    // Hide if kind is in hidden set
+    return !hidden.has(ev.kind);
+  });
+
+  if (visibleEvents.length === 0) {
     return { nodes, links, spindles: turnSpindles, nextY: originY + TURN_GAP };
   }
 
@@ -428,17 +443,21 @@ function layoutTurn(
 
   // Identify paired outputs — they share a row with their call, not their own
   const pairedOutputIds = new Set<string>();
-  for (const ev of events) {
+  for (const ev of visibleEvents) {
     if (ev.kind === "tool_call" && ev.output_event_id) {
-      pairedOutputIds.add(ev.output_event_id);
+      // Only pair if the output is also visible
+      const outputEvent = events.find(e => e.event_id === ev.output_event_id);
+      if (outputEvent && !hidden.has(outputEvent.kind)) {
+        pairedOutputIds.add(ev.output_event_id);
+      }
     }
   }
 
   // Compute event positions, skipping paired outputs (placed alongside their call)
   const eventPositions: TurnEventPosition[] = [];
   let rowIdx = 0;
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i];
+  for (let i = 0; i < visibleEvents.length; i++) {
+    const event = visibleEvents[i];
     if (pairedOutputIds.has(event.event_id)) continue;
     const role = mainSpineAnchorRole(turn, event);
     const y = eventTop + rowIdx * TURN_STEP_GAP;
@@ -447,7 +466,7 @@ function layoutTurn(
     eventPositions.push({
       x,
       y,
-      event: events[i],
+      event: visibleEvents[i],
       index: i,
       isAnchor: role !== null,
       isInput: role === "input",
@@ -458,7 +477,7 @@ function layoutTurn(
   for (const pos of [...eventPositions]) {
     const ev = pos.event;
     if (ev.kind !== "tool_call" || !ev.output_event_id) continue;
-    const outputEvent = events.find((e) => e.event_id === ev.output_event_id);
+    const outputEvent = visibleEvents.find((e) => e.event_id === ev.output_event_id);
     if (!outputEvent) continue;
     const label = eventTypeLabel(ev);
     const labelW = Math.min(SIDE_LABEL_MAX_WIDTH, Math.max(SIDE_LABEL_MIN_WIDTH, label.length * LABEL_CHAR_WIDTH));
@@ -484,7 +503,7 @@ function layoutTurn(
   const spineBottom = anchorPositions[anchorPositions.length - 1]?.y ?? spineTop;
 
   // Create nodes for each event
-  const totalSubagentsForNodes = countSubagentSessions(events);
+  const totalSubagentsForNodes = countSubagentSessions(visibleEvents);
   let subagentIdx = 0;
   for (let i = 0; i < eventPositions.length; i++) {
     const pos = eventPositions[i];
