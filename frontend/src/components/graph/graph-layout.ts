@@ -68,6 +68,8 @@ export interface ChildSession {
   graph_turns?: GraphTurn[];
   child_sessions?: ChildSession[];
   first_event_timestamp?: string | null;
+  agent_nickname?: string;
+  agent_role?: string;
 }
 
 /** Position of one event in the folder tree */
@@ -308,7 +310,11 @@ export function buildGraphFromTurns(
         sessionId: child.session_id,
         parentSessionId: sessionId,
         spindleRole: "subagent",
-        metadata: { synthesized: true },
+        metadata: {
+          synthesized: true,
+          ...(child.agent_nickname ? { agent_nickname: child.agent_nickname } : {}),
+          ...(child.agent_role ? { agent_role: child.agent_role } : {}),
+        },
         labelAlign: "left",
         ...(multiSub ? { subagentTint: tint } : {}),
       };
@@ -412,7 +418,7 @@ function layoutTurn(
   turn: GraphTurn,
   originX: number,
   originY: number,
-  _sessionMap: Map<string, ChildSession>,
+  sessionMap: Map<string, ChildSession>,
   sessionId?: string,
   hiddenKinds?: Set<string>,
 ): { nodes: GraphNode[]; links: GraphLink[]; spindles: TurnSpindle[]; nextY: number } {
@@ -514,6 +520,13 @@ function layoutTurn(
       const multiSub = totalSubagentsForNodes >= 2;
       const tint = multiSub ? subagentTintAt(subagentIdx) : "#475569";
       const metadata = tooltipMetadataForEvent(ev);
+      // Surface the subagent's name + role from the child session record so the
+      // tooltip matches the right-side session list (role hidden when absent).
+      const childSession = ev.child_session_id
+        ? sessionMap.get(ev.child_session_id)
+        : undefined;
+      if (childSession?.agent_nickname) metadata.agent_nickname = childSession.agent_nickname;
+      if (childSession?.agent_role) metadata.agent_role = childSession.agent_role;
       const markerNode: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
@@ -786,6 +799,7 @@ function inputContentTextForEvent(
   return textFromContent(sourcePayload?.content)
     ?? textFromContent(rawMeta?.content)
     ?? textFromContent(raw?.content)
+    ?? stringField(raw?.content_preview)
     ?? stringField(rawMeta?.content_text)
     ?? stringField(raw?.content_text)
     ?? stringField(ev.content);

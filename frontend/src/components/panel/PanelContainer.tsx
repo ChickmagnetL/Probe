@@ -40,6 +40,8 @@ function childDetailToGraphSession(child: ChildSessionDetail): ChildSession {
     graph_turns: hasEvents ? buildTurnsFromEvents(child.events) : [],
     child_sessions: child.children?.map(childDetailToGraphSession),
     first_event_timestamp: firstTimestamp,
+    ...(child.agent_nickname ? { agent_nickname: child.agent_nickname } : {}),
+    ...(child.agent_role ? { agent_role: child.agent_role } : {}),
   };
 }
 

@@ -308,15 +308,10 @@ export function extractFields(
 
     // ── New: R1.2 subagent_session ────────────────────
     case "subagent_session": {
-      const childId = stringOrNull(meta.child_session_id);
-      const displayName = stringOrNull(meta.title);
-      const promptPreview = stringOrNull(meta.prompt_preview);
-      const status = stringOrNull(meta.status_preview);
-
-      if (childId) fields.push({ key: "child", label: "Child Session", value: childId });
-      if (displayName) fields.push({ key: "name", label: "Agent", value: displayName });
-      if (promptPreview) fields.push({ key: "prompt", label: "Prompt", value: truncate(promptPreview, 80) });
-      if (status) fields.push({ key: "status", label: "Status", value: status });
+      const agentName = stringOrNull(meta.agent_nickname);
+      const agentRole = stringOrNull(meta.agent_role);
+      if (agentName) fields.push({ key: "agent", label: "Agent", value: agentName });
+      if (agentRole) fields.push({ key: "role", label: "Role", value: agentRole });
       break;
     }
 

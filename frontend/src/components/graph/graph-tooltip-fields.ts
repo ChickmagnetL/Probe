@@ -37,6 +37,13 @@ export function extractGraphTooltipFields(
   kind: string,
 ): EventField[] {
   const meta = omitDisplayFields(mergeMetaLayers(rawMeta));
+  const fields = extractFields(meta, kind);
+
+  // Subagent nodes show only their agent name + role, matching the session list.
+  if (kind === "subagent_session") {
+    return fields;
+  }
+
   const baseline: EventField[] = [];
   const recordType = stringOrNull(meta.record_type);
   const payloadType = stringOrNull(meta.payload_type) ?? stringOrNull(meta.event_type);
@@ -44,6 +51,5 @@ export function extractGraphTooltipFields(
   if (recordType) baseline.push({ key: "record_type", label: "Type", value: recordType });
   if (payloadType) baseline.push({ key: "payload_type", label: "Payload Type", value: payloadType });
 
-  const fields = extractFields(meta, kind);
   return [...baseline, ...withoutBaselineDuplicates(fields, baseline)].slice(0, 3);
 }
