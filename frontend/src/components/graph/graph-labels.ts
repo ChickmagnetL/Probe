@@ -59,12 +59,11 @@ export function eventTypeLabel(src: LabelSource): string {
   const sourcePayload = sourceRecord ? tryParseMeta(sourceRecord.payload) : null;
 
   const label =
-    strField(rawMeta, "event_type")
-    ?? strField(rawMeta, "payload_type")
-    ?? strField(raw, "event_type")
+    strField(rawMeta, "payload_type")
     ?? strField(raw, "payload_type")
-    ?? strField(sourceRecord, "event_type")
+    ?? strField(raw, "record_type")
     ?? strField(sourceRecord, "payload_type")
+    ?? strField(sourceRecord, "record_type")
     ?? strField(sourcePayload, "type")
     ?? null;
 
