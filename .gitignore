@@ -8,6 +8,7 @@ samples/
 
 # Tauri generated artifacts and sidecars
 tauri/target/
+tauri/gen/
 tauri/probe-engine-*
 
 # Python engine generated artifacts
@@ -15,12 +16,32 @@ engine/dist/
 engine/build/
 __pycache__/
 *.pyc
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 
 # Local databases
 probe.db
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+.fleet/
 
 # macOS
 .DS_Store
