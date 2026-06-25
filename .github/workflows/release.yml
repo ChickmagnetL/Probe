@@ -73,6 +73,9 @@ jobs:
         with:
           workspaces: tauri
 
+      - name: Install frontend dependencies
+        run: cd frontend && npm install
+
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
 
