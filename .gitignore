@@ -3,6 +3,9 @@ frontend/node_modules/
 frontend/dist/
 frontend/public/samples/
 
+# Dev sample data (contains real session transcripts — never commit)
+samples/
+
 # Tauri generated artifacts and sidecars
 tauri/target/
 tauri/probe-engine-*
