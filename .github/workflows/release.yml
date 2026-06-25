@@ -20,9 +20,10 @@ jobs:
           - os: macos-14
             rust_target: aarch64-apple-darwin
             label: macos-arm64
-          - os: macos-13
-            rust_target: x86_64-apple-darwin
-            label: macos-x86_64
+          # macOS x86_64 暂时移除，后续按需加回
+          # - os: macos-13
+          #   rust_target: x86_64-apple-darwin
+          #   label: macos-x86_64
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
             label: windows-x64
