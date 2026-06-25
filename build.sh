@@ -3,17 +3,58 @@ set -euo pipefail
 
 # Build script for Probe desktop app (macOS DMG).
 # Usage:
-#   ./build.sh          — full build (sidecar + frontend + tauri)
-#   ./build.sh sidecar  — build Python sidecar only
-#   ./build.sh frontend — build frontend only
-#   ./build.sh tauri    — build Tauri app only (assumes sidecar + frontend done)
+#   ./build.sh                   — full build for host architecture
+#   ./build.sh --target <triple> — full build for a specific target
+#   ./build.sh sidecar           — build Python sidecar only
+#   ./build.sh frontend          — build frontend only
+#   ./build.sh tauri             — build Tauri app only (assumes sidecar + frontend done)
+#
+# Examples:
+#   ./build.sh                                # host arch (e.g. aarch64-apple-darwin)
+#   ./build.sh --target x86_64-apple-darwin   # Intel build (via Rosetta on Apple Silicon)
+#   ./build.sh --target aarch64-apple-darwin  # Apple Silicon build (explicit)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENGINE_DIR="$SCRIPT_DIR/engine"
 TAURI_DIR="$SCRIPT_DIR/tauri"
 
-TARGET_TRIPLE="$(rustc -vV 2>/dev/null | grep '^host:' | awk '{print $2}')"
+# Parse --target flag
+CARGO_TARGET=""
+PYINSTALLER_ARCH=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --target)
+            CARGO_TARGET="$2"
+            shift 2
+            ;;
+        sidecar|frontend|tauri|all)
+            BUILD_STEP="$1"
+            shift
+            ;;
+        *)
+            echo "Usage: $0 [--target <triple>] [sidecar|frontend|tauri|all]"
+            exit 1
+            ;;
+    esac
+done
+BUILD_STEP="${BUILD_STEP:-all}"
+
+# Resolve target triple and sidecar name
+if [[ -n "$CARGO_TARGET" ]]; then
+    TARGET_TRIPLE="$CARGO_TARGET"
+else
+    TARGET_TRIPLE="$(rustc -vV 2>/dev/null | grep '^host:' | awk '{print $2}')"
+fi
 SIDECAR_NAME="probe-engine-${TARGET_TRIPLE}"
+
+# Determine PyInstaller invocation prefix (Rosetta for x86_64 on Apple Silicon)
+if [[ "$TARGET_TRIPLE" == "x86_64-apple-darwin" && "$(uname -m)" == "arm64" ]]; then
+    PYINSTALLER_PREFIX=(arch -x86_64)
+    log_prefix="[build] Intel target on Apple Silicon — using Rosetta 2"
+else
+    PYINSTALLER_PREFIX=()
+    log_prefix=""
+fi
 
 log() {
     echo "[build] $*"
@@ -21,6 +62,7 @@ log() {
 
 build_sidecar() {
     log "Building Python sidecar ($SIDECAR_NAME) ..."
+    [[ -n "$log_prefix" ]] && log "$log_prefix"
 
     if ! command -v pyinstaller &>/dev/null; then
         log "ERROR: pyinstaller not found. Install with: pip install pyinstaller"
@@ -29,7 +71,7 @@ build_sidecar() {
 
     (
         cd "$ENGINE_DIR"
-        pyinstaller probe.spec --noconfirm --clean --distpath dist 2>&1
+        "${PYINSTALLER_PREFIX[@]}" pyinstaller probe.spec --noconfirm --clean --distpath dist 2>&1
     )
 
     local src="$ENGINE_DIR/dist/probe-engine"
@@ -52,13 +94,21 @@ build_frontend() {
 }
 
 build_tauri() {
-    log "Building Tauri app ..."
-    cd "$TAURI_DIR" && cargo tauri build 2>&1
+    log "Building Tauri app (target: $TARGET_TRIPLE) ..."
+    local cargo_args=(build)
+    if [[ -n "$CARGO_TARGET" ]]; then
+        cargo_args+=(--target "$CARGO_TARGET")
+    fi
+    cd "$TAURI_DIR" && cargo tauri "${cargo_args[@]}" 2>&1
     log "Tauri build complete."
 }
 
 report() {
-    local glob="$TAURI_DIR/target/release/bundle/dmg/*.dmg"
+    local bundle_dir="$TAURI_DIR/target/release/bundle/dmg"
+    if [[ -n "$CARGO_TARGET" ]]; then
+        bundle_dir="$TAURI_DIR/target/$CARGO_TARGET/release/bundle/dmg"
+    fi
+    local glob="$bundle_dir/*.dmg"
     # shellcheck disable=SC2086
     local dmg
     dmg=$(ls $glob 2>/dev/null | head -1)
@@ -70,8 +120,8 @@ report() {
 }
 
 main() {
-    local target="${1:-all}"
-    case "$target" in
+    log "Target: $TARGET_TRIPLE | Step: $BUILD_STEP"
+    case "$BUILD_STEP" in
         sidecar)  build_sidecar ;;
         frontend) build_frontend ;;
         tauri)    build_tauri ;;
@@ -82,10 +132,10 @@ main() {
             report
             ;;
         *)
-            echo "Usage: $0 [sidecar|frontend|tauri|all]"
+            echo "Usage: $0 [--target <triple>] [sidecar|frontend|tauri|all]"
             exit 1
             ;;
     esac
 }
 
-main "$@"
+main

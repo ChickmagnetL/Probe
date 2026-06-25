@@ -9,7 +9,8 @@ from pathlib import Path
 
 # Ignore SIGPIPE so writing to a closed stdout raises BrokenPipeError
 # instead of terminating the process with a signal.
-signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+if hasattr(signal, "SIGPIPE"):
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 sys.path.insert(0, str(Path(__file__).parent))
 

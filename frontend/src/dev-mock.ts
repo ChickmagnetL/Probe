@@ -210,7 +210,7 @@ function openFilePicker(): Promise<Array<{ path: string; content: string }>> {
 async function loadSample(url: string): Promise<void> {
   const response = await fetch(url);
   const content = await response.text();
-  const fileName = url.split("/").pop() ?? "sample.jsonl";
+  const fileName = url.split(/[\/\\]/).pop() ?? "sample.jsonl";
   rawFileContents.set(fileName, content);
   const files = [{ path: fileName, content }];
   currentSummary = processFiles(files);

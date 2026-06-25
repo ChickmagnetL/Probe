@@ -35,7 +35,7 @@ function seedSessions(
     const sp = stringOrNull(row.source_path);
     if (sp) {
       session.source_path = sp;
-      session.file_name = sp.split("/").pop() ?? null;
+      session.file_name = sp.split(/[\/\\]/).pop() ?? null;
     }
     if (!session.source_raw_record_id) {
       session.source_raw_record_id = stringOrNull(row.raw_record_id);
@@ -190,7 +190,7 @@ function sessionForRow(
   const sp = stringOrNull(row.source_path);
   if (sp) {
     session.source_path = session.source_path ?? sp;
-    session.file_name = session.file_name ?? sp.split("/").pop() ?? null;
+    session.file_name = session.file_name ?? sp.split(/[\/\\]/).pop() ?? null;
   }
   return session;
 }

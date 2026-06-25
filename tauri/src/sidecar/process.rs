@@ -22,11 +22,21 @@ impl Drop for SidecarInner {
     }
 }
 
-/// Returns true if running inside a macOS .app bundle.
+/// Returns true if running as a bundled application (not from cargo dev).
+///
+/// Checks whether the sidecar binary (`probe-engine` / `probe-engine.exe`)
+/// exists next to the current executable. This works cross-platform:
+/// - macOS `.app` bundle: binaries are in `Contents/MacOS/`
+/// - Windows NSIS install: binaries are in the install directory
+/// - Dev (`cargo run`): the sidecar binary is not present next to the exe
 fn is_bundled() -> bool {
     if let Ok(exe) = std::env::current_exe() {
-        if let Some(s) = exe.to_str() {
-            return s.contains(".app/Contents/MacOS/");
+        if let Some(parent) = exe.parent() {
+            #[cfg(target_os = "windows")]
+            let sidecar = parent.join("probe-engine.exe");
+            #[cfg(not(target_os = "windows"))]
+            let sidecar = parent.join("probe-engine");
+            return sidecar.exists();
         }
     }
     false
@@ -39,9 +49,12 @@ fn is_bundled() -> bool {
 fn sidecar_path() -> Option<PathBuf> {
     if is_bundled() {
         // Bundled mode: Tauri places externalBin binaries next to the main
-        // executable in Contents/MacOS/.
+        // executable (Contents/MacOS/ on macOS, install dir on Windows).
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
+                #[cfg(target_os = "windows")]
+                return Some(parent.join("probe-engine.exe"));
+                #[cfg(not(target_os = "windows"))]
                 return Some(parent.join("probe-engine"));
             }
         }
@@ -63,7 +76,9 @@ fn engine_dir() -> PathBuf {
         // The bundled sidecar is a self-contained PyInstaller binary.
         // It resolves its database path from platform conventions, not cwd.
         // Use home directory as a safe working directory.
+        // HOME is set on macOS/Linux; USERPROFILE is the Windows equivalent.
         return std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("/"));
     }

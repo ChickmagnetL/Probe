@@ -26,7 +26,7 @@ export function processFile(
   content: string,
   buffers: ReturnType<typeof createExtractionBuffers>,
 ): ParseFileResult {
-  const file_name = source_path.split("/").pop() ?? source_path;
+  const file_name = source_path.split(/[\/\\]/).pop() ?? source_path;
   const file_size = new TextEncoder().encode(content).byteLength;
   const file_context = createFileContext(source_path, file_name, file_size);
 
