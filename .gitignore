@@ -1,6 +1,7 @@
 # Frontend generated artifacts
 frontend/node_modules/
 frontend/dist/
+frontend/public/samples/
 
 # Tauri generated artifacts and sidecars
 tauri/target/
