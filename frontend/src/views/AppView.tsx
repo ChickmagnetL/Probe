@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useSessionStore } from "../stores/session";
 import { useImportStore } from "../stores/import";
 import { usePanelStore } from "../stores/panel";
@@ -24,13 +25,18 @@ import { ProgressBar } from "../components/shared/ProgressBar";
 import { invoke } from "../ipc/invoke";
 import type { EventRow } from "../ipc/types";
 
-const SORT_OPTIONS = [
-  { value: "imported_at:desc", label: "Newest" },
-  { value: "imported_at:asc", label: "Oldest" },
-  { value: "start_time:desc", label: "Latest start" },
-];
+function useSortOptions() {
+  const { t } = useTranslation();
+  return [
+    { value: "imported_at:desc", label: t("sort.newest") },
+    { value: "imported_at:asc", label: t("sort.oldest") },
+    { value: "start_time:desc", label: t("sort.latestStart") },
+  ];
+}
 
 export function AppView() {
+  const { t } = useTranslation();
+  const sortOptions = useSortOptions();
   const {
     detail,
     detailLoading,
@@ -69,7 +75,7 @@ export function AppView() {
 
   // FilterBar state
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState(SORT_OPTIONS[0].value);
+  const [sort, setSort] = useState(sortOptions[0].value);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Delete dialog state
@@ -255,8 +261,8 @@ export function AppView() {
           <PanelContainer node={root} />
         ) : (
           <EmptyState
-            title="Select a session"
-            description="Choose a session from the right panel or import new files to get started"
+            title={t("app.emptyTitle")}
+            description={t("app.emptyDescription")}
             showShortcut
             action={
               <button
@@ -278,7 +284,7 @@ export function AppView() {
                   <line x1="12" y1="11" x2="12" y2="17" />
                   <line x1="9" y1="14" x2="15" y2="14" />
                 </svg>
-                Import Files
+                {t("app.importFiles")}
               </button>
             }
           />
@@ -308,7 +314,7 @@ export function AppView() {
             data-tauri-drag-region="false"
             onClick={() => setSettingsOpen(true)}
             className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-112 active:scale-90"
-            aria-label="Settings"
+            aria-label={t("app.settings")}
             type="button"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -320,7 +326,7 @@ export function AppView() {
             data-tauri-drag-region="false"
             onClick={handleDeleteClick}
             className={`p-2 rounded-lg transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-112 active:scale-90 ${selectionMode && selectedCount > 0 ? 'text-destructive bg-destructive/10 hover:bg-destructive/20' : selectionMode ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
-            aria-label={selectionMode && selectedCount > 0 ? "Delete selected" : selectionMode ? "Exit selection" : "Delete sessions"}
+            aria-label={selectionMode && selectedCount > 0 ? t("delete.deleteSelected") : selectionMode ? t("delete.exitSelection") : t("delete.deleteSessions")}
             type="button"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -332,7 +338,7 @@ export function AppView() {
             data-tauri-drag-region="false"
             onClick={openImportModal}
             className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-all duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-112 active:scale-90"
-            aria-label="Import files"
+            aria-label={t("app.importFiles")}
             type="button"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -348,13 +354,13 @@ export function AppView() {
           <div className="px-4 pt-3 pb-1.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
-                Sessions
+                {t("app.sessions")}
               </span>
               {selectionMode && (
                 <button
                   onClick={selectAll}
                   className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Select all"
+                  aria-label={t("delete.selectAll")}
                   type="button"
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -375,7 +381,7 @@ export function AppView() {
                 onSearchChange={setSearch}
                 sort={sort}
                 onSortChange={setSort}
-                sortOptions={SORT_OPTIONS}
+                sortOptions={sortOptions}
               />
             )}
           </div>
@@ -384,7 +390,7 @@ export function AppView() {
               <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
                 <span className="flex items-center gap-1.5">
                   <span className="w-3 h-3 border-2 border-muted border-t-accent rounded-full animate-spin" />
-                  Scanning & importing sessions
+                  {t("app.scanning")}
                 </span>
                 <span className="tabular-nums">
                   {importProcessed}/{importTotal}
@@ -411,7 +417,7 @@ export function AppView() {
             <button
               onClick={handleOverlayClose}
               className="flex items-center px-3 py-1.5 -ml-3 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Back to sessions"
+              aria-label={t("app.backToSessions")}
               type="button"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -446,9 +452,9 @@ export function AppView() {
       {/* Delete confirmation dialog */}
       {deleteDialogOpen && (
         <ConfirmDialog
-          title="Delete Sessions"
-          message={`Are you sure you want to delete ${selectedCount} session${selectedCount > 1 ? 's' : ''}? This action cannot be undone.`}
-          confirmLabel="Delete"
+          title={t("delete.title")}
+          message={t("delete.message_other", { count: selectedCount })}
+          confirmLabel={t("delete.confirm")}
           confirmVariant="destructive"
           onCancel={() => {
             setDeleteDialogOpen(false);
@@ -465,7 +471,7 @@ export function AppView() {
               className="w-4 h-4 rounded border-border text-destructive focus:ring-ring/30"
             />
             <span className="text-sm text-muted-foreground">
-              Also delete original files
+              {t("delete.alsoDeleteFiles")}
             </span>
           </label>
         </ConfirmDialog>

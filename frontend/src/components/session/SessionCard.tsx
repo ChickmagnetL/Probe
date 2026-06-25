@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTranslation } from "react-i18next";
 import type { SessionRow } from "../../ipc/types";
 import { formatRelative } from "../../lib/format";
 
@@ -70,6 +71,7 @@ export const SessionCard = memo(function SessionCard({
   onSelect, onToggleSelect, onSetExpanded, registerCardRef,
   depth, hasChildren, isExpanded,
 }: SessionCardProps) {
+  const { t } = useTranslation();
   const label = session.title ?? session.agent_nickname ?? session.file_name ?? session.id;
   const ts = session.start_time ?? session.imported_at;
   const isSubagent = depth !== undefined && depth > 0;
@@ -130,7 +132,7 @@ export const SessionCard = memo(function SessionCard({
             onClick={handleArrowToggle}
             className="mt-0.5 shrink-0 w-5 h-5 flex items-center justify-center rounded hover:bg-muted transition-colors"
             type="button"
-            aria-label={isExpanded ? "Collapse children" : "Expand children"}
+            aria-label={isExpanded ? t("session.collapseChildren") : t("session.expandChildren")}
           >
             <svg
               width="12" height="12" viewBox="0 0 24 24"
@@ -151,7 +153,7 @@ export const SessionCard = memo(function SessionCard({
               backgroundColor: selected ? "var(--color-primary)" : "transparent",
             }}
             type="button"
-            aria-label={selected ? "Deselect session" : "Select session"}
+            aria-label={selected ? t("session.deselectSession") : t("session.selectSession")}
           >
             {selected && (
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -175,7 +177,7 @@ export const SessionCard = memo(function SessionCard({
                 </span>
               )}
             </div>
-            <span className={`text-xs transition-colors duration-150 truncate ${isActive ? "text-white/50" : "text-muted-foreground"}`}>{formatRelative(ts)}</span>
+            <span className={`text-xs transition-colors duration-150 truncate ${isActive ? "text-white/50" : "text-muted-foreground"}`}>{formatRelative(ts, t)}</span>
           </div>
         </div>
         {/* Active indicator — always rendered (opacity-toggled) so it reserves

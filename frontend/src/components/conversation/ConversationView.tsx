@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import type { EventRow } from "../../ipc/types";
 import { eventTypeLabel } from "../graph/graph-labels";
 import { extractFields, type EventField } from "../../lib/event-fields";
@@ -205,6 +206,7 @@ export function ConversationView({
   selectedEventId,
   onSelectEvent,
 }: ConversationViewProps) {
+  const { t } = useTranslation();
   const turns = useMemo(() => buildTurns(events), [events]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -233,19 +235,19 @@ export function ConversationView({
       <div className="shrink-0 flex items-center justify-end px-5 pt-8 pb-2">
         {turns.length > 0 && (
           <span className="text-[11px] font-medium text-muted-foreground">
-            {turns.length} {turns.length === 1 ? "turn" : "turns"}
+            {t("conversation.turns_other", { count: turns.length })}
           </span>
         )}
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-4">
         {turns.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">No events</p>
+          <p className="text-sm text-muted-foreground text-center py-8">{t("conversation.noEvents")}</p>
         ) : (
           <div className="space-y-4">
             {turns.map((turn, i) => (
               <div key={turn.user?.id ?? `turn-${i}`} className="space-y-2">
                 <StepList
-                  label={`${turn.inputDetails.length} ${turn.inputDetails.length === 1 ? "system prompt" : "system prompts"}`}
+                  label={t("conversation.systemPrompts_other", { count: turn.inputDetails.length })}
                   steps={turn.inputDetails}
                   selectedEventId={selectedEventId}
                   onSelectEvent={onSelectEvent}
@@ -263,7 +265,7 @@ export function ConversationView({
                       `}
                     >
                       <div className="text-sm whitespace-pre-wrap break-words">
-                        {turn.user!.content || "(empty)"}
+                        {turn.user!.content || t("conversation.empty")}
                       </div>
                       {turn.user!.timestamp && (
                         <div className="text-[10px] mt-2 opacity-50">
@@ -275,7 +277,7 @@ export function ConversationView({
                 )}
 
                 <StepList
-                  label={`${turn.outputDetails.length} ${turn.outputDetails.length === 1 ? "step" : "steps"}`}
+                  label={t("conversation.steps_other", { count: turn.outputDetails.length })}
                   steps={turn.outputDetails}
                   selectedEventId={selectedEventId}
                   onSelectEvent={onSelectEvent}
@@ -293,7 +295,7 @@ export function ConversationView({
                       `}
                     >
                       <div className="text-sm whitespace-pre-wrap break-words">
-                        {turn.assistant!.content || "(empty)"}
+                        {turn.assistant!.content || t("conversation.empty")}
                       </div>
                       {turn.assistant!.timestamp && (
                         <div className="text-[10px] mt-2 opacity-50">

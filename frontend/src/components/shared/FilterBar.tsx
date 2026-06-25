@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 interface FilterBarProps {
   search: string;
@@ -15,6 +16,7 @@ export function FilterBar({
   onSortChange,
   sortOptions,
 }: FilterBarProps) {
+  const { t } = useTranslation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -51,7 +53,7 @@ export function FilterBar({
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             onBlur={() => { if (!search) setSearchOpen(false); }}
-            placeholder="Search..."
+            placeholder={t("filter.searchPlaceholder")}
             className="w-full rounded-lg border border-border bg-card pl-8 pr-2 py-1.5 text-xs
                        placeholder:text-muted-foreground text-foreground
                        focus:outline-none focus:ring-1 focus:ring-ring/30 focus:border-primary
@@ -62,7 +64,7 @@ export function FilterBar({
         <button
           onClick={() => setSearchOpen(true)}
           className="btn-ghost p-1.5"
-          aria-label="Search sessions"
+          aria-label={t("filter.searchSessions")}
           type="button"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -77,7 +79,7 @@ export function FilterBar({
         <button
           onClick={() => setSortOpen((v) => !v)}
           className="btn-ghost p-1.5"
-          aria-label="Sort sessions"
+          aria-label={t("filter.sortSessions")}
           type="button"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

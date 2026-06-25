@@ -12,6 +12,8 @@ interface SettingsState {
   load: () => Promise<void>;
   /** Persist the Codex CLI path to the engine KV store and mirror it locally. */
   setCodexPath: (path: string) => Promise<void>;
+  /** Persist the interface language to the engine KV store and mirror it locally. */
+  setInterfaceLanguage: (lang: string) => Promise<void>;
 }
 
 /** Narrow an unknown caught value into the cross-layer IpcError shape. */
@@ -55,6 +57,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       set({ settings, loading: false });
     } catch (e) {
       set({ error: toIpcError(e), loading: false });
+    }
+  },
+
+  setInterfaceLanguage: async (lang) => {
+    try {
+      await invoke.setSettings("interface_language", lang);
+      const settings = await invoke.getSettings();
+      set({ settings });
+    } catch (e) {
+      set({ error: toIpcError(e) });
     }
   },
 }));

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 interface ConfirmDialogProps {
   title: string;
@@ -19,6 +20,8 @@ export function ConfirmDialog({
   onConfirm,
   children,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
@@ -45,7 +48,7 @@ export function ConfirmDialog({
               className="btn-ghost px-4 py-2"
               type="button"
             >
-              Cancel
+              {t("confirm.cancel")}
             </button>
             <button
               onClick={onConfirm}

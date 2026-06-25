@@ -10,14 +10,24 @@ export function formatTime(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function formatRelative(iso: string): string {
+export function formatRelative(
+  iso: string,
+  t?: (key: string, opts?: Record<string, unknown>) => string,
+): string {
   const now = Date.now();
   const then = new Date(iso).getTime();
   const diff = now - then;
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
+  if (diff < 60_000) return t ? t("format.justNow") : "just now";
+  if (diff < 3_600_000) {
+    const count = Math.floor(diff / 60_000);
+    return t ? t("format.minutesAgo", { count }) : `${count}m ago`;
+  }
+  if (diff < 86_400_000) {
+    const count = Math.floor(diff / 3_600_000);
+    return t ? t("format.hoursAgo", { count }) : `${count}h ago`;
+  }
+  const count = Math.floor(diff / 86_400_000);
+  return t ? t("format.daysAgo", { count }) : `${count}d ago`;
 }
 
 export function truncate(s: string, max: number): string {

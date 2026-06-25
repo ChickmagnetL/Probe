@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { i18n } from "../../i18n";
 
 interface Props {
   children: ReactNode;
@@ -28,13 +29,13 @@ export class ErrorBoundary extends Component<Props, State> {
               <line x1="9" y1="9" x2="15" y2="15" />
             </svg>
           </div>
-          <p className="text-sm font-medium text-foreground">Something went wrong</p>
+          <p className="text-sm font-medium text-foreground">{i18n.t("error.somethingWrong")}</p>
           <p className="text-xs text-muted-foreground">{this.state.error?.message}</p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
             className="mt-2 btn-secondary"
           >
-            Try again
+            {i18n.t("error.tryAgain")}
           </button>
         </div>
       );

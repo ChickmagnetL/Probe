@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 interface SplitMenuProps {
   open: boolean;
@@ -8,6 +9,7 @@ interface SplitMenuProps {
 }
 
 export function SplitMenu({ open, onSplitRight, onSplitDown, onClose }: SplitMenuProps) {
+  const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -44,7 +46,7 @@ export function SplitMenu({ open, onSplitRight, onSplitDown, onClose }: SplitMen
           <rect x="3" y="4" width="8" height="16" rx="1" />
           <rect x="13" y="4" width="8" height="16" rx="1" />
         </svg>
-        <span>Split Right</span>
+        <span>{t("split.right")}</span>
       </button>
       <button
         type="button"
@@ -55,7 +57,7 @@ export function SplitMenu({ open, onSplitRight, onSplitDown, onClose }: SplitMen
           <rect x="3" y="3" width="18" height="8" rx="1" />
           <rect x="3" y="13" width="18" height="8" rx="1" />
         </svg>
-        <span>Split Down</span>
+        <span>{t("split.down")}</span>
       </button>
     </div>
   );

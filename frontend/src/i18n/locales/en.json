@@ -1,0 +1,170 @@
+{
+  "app": {
+    "emptyTitle": "Select a session",
+    "emptyDescription": "Choose a session from the right panel or import new files to get started",
+    "importFiles": "Import Files",
+    "sessions": "Sessions",
+    "scanning": "Scanning & importing sessions",
+    "settings": "Settings",
+    "backToSessions": "Back to sessions"
+  },
+  "sort": {
+    "newest": "Newest",
+    "oldest": "Oldest",
+    "latestStart": "Latest start"
+  },
+  "delete": {
+    "title": "Delete Sessions",
+    "message_one": "Are you sure you want to delete {{count}} session? This action cannot be undone.",
+    "message_other": "Are you sure you want to delete {{count}} sessions? This action cannot be undone.",
+    "confirm": "Delete",
+    "alsoDeleteFiles": "Also delete original files",
+    "deleteSelected": "Delete selected",
+    "exitSelection": "Exit selection",
+    "deleteSessions": "Delete sessions",
+    "selectAll": "Select all"
+  },
+  "import": {
+    "title": "Import Files",
+    "subtitle": "Select a rollout JSONL file or directory to begin",
+    "fileSelected": "File selected",
+    "chooseFiles": "Choose files to import",
+    "selectFolder": "Select Folder",
+    "selectFile": "Select File",
+    "importing": "Importing...",
+    "startImport": "Start Import",
+    "processing": "Processing files...",
+    "failed": "Import failed",
+    "complete": "Import complete",
+    "sessionsImported": "{{count}} sessions imported successfully",
+    "details": "Import Details",
+    "close": "Close import dialog"
+  },
+  "importStats": {
+    "files": "Files",
+    "records": "Records",
+    "sessions": "Sessions",
+    "parseErrors": "Parse Errors",
+    "needsReview": "Needs Review",
+    "rootViews": "Root Views",
+    "totalTokens": "Total Tokens"
+  },
+  "importDetails": {
+    "parse_errors": "Parse Errors",
+    "raw_records": "Raw Records",
+    "conversation_meta_raw": "Session Info",
+    "turn_manifest": "Turn Settings",
+    "message_items_raw": "Messages",
+    "reasoning_items_raw": "Reasoning",
+    "tool_calls_raw": "Tool Calls",
+    "tool_call_outputs_raw": "Tool Outputs",
+    "tool_call_pairs": "Tool Call Pairs",
+    "telemetry_events": "Usage Stats",
+    "lifecycle_events": "Task Status",
+    "structured_tool_end_events": "Tool Results",
+    "collaboration_events": "Sub-agent Collab",
+    "search_events": "Web Search",
+    "system_events": "System Status",
+    "compaction_events": "Context Compaction",
+    "other": "Other"
+  },
+  "confirm": {
+    "cancel": "Cancel"
+  },
+  "empty": {
+    "shortcut": "Press ⌘I to import files"
+  },
+  "error": {
+    "somethingWrong": "Something went wrong",
+    "tryAgain": "Try again"
+  },
+  "filter": {
+    "searchPlaceholder": "Search...",
+    "searchSessions": "Search sessions",
+    "sortSessions": "Sort sessions"
+  },
+  "detail": {
+    "tokenUsage": "Token Usage",
+    "lastCall": "Last Call",
+    "sessionTotal": "Session Total",
+    "input": "Input",
+    "output": "Output",
+    "reasoning": "Reasoning",
+    "cached": "Cached",
+    "total": "Total",
+    "showDetail": "Show Detail",
+    "jsonlLine": "JSONL #{{lineNo}}",
+    "toolCall": "Tool Call",
+    "mcpToolCall": "MCP Tool Call"
+  },
+  "panel": {
+    "graph": "Graph",
+    "timeline": "Timeline",
+    "chat": "Chat",
+    "raw": "Raw",
+    "splitPanel": "Split panel",
+    "closePanel": "Close panel"
+  },
+  "split": {
+    "right": "Split Right",
+    "down": "Split Down"
+  },
+  "session": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This Week",
+    "older": "Older",
+    "unknown": "Unknown",
+    "noSessions": "No sessions",
+    "importToCreate": "Import files to create sessions",
+    "collapseChildren": "Collapse children",
+    "expandChildren": "Expand children",
+    "deselectSession": "Deselect session",
+    "selectSession": "Select session"
+  },
+  "timeline": {
+    "events_one": "{{count}} event",
+    "events_other": "{{count}} events",
+    "noEvents": "No events"
+  },
+  "conversation": {
+    "turns_one": "{{count}} turn",
+    "turns_other": "{{count}} turns",
+    "noEvents": "No events",
+    "systemPrompts_one": "{{count}} system prompt",
+    "systemPrompts_other": "{{count}} system prompts",
+    "steps_one": "{{count}} step",
+    "steps_other": "{{count}} steps",
+    "empty": "(empty)"
+  },
+  "raw": {
+    "loading": "Loading...",
+    "readError": "Could not read source file: {{error}}",
+    "noSource": "No source file available for this session"
+  },
+  "graphControls": {
+    "legend": "Legend",
+    "reset": "Reset",
+    "hide": "Hide",
+    "show": "Show"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Configure where Probe scans for Codex CLI sessions.",
+    "codexPath": "Codex CLI Path",
+    "default": "Default:",
+    "save": "Save",
+    "saving": "Saving...",
+    "close": "Close settings",
+    "general": "General",
+    "interface": "Interface",
+    "language": "Language",
+    "browse": "Browse"
+  },
+  "format": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  }
+}

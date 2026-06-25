@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { EventRow, TokenUsage } from "../../ipc/types";
 import { buildEventMetadataCards } from "../../lib/event-metadata-cards";
 
@@ -61,6 +62,7 @@ export function ContentRenderer({ event }: { event: EventRow }) {
 // ── Token usage ─────────────────────────────────────────
 
 export function TokenUsageSection({ event }: { event: EventRow }) {
+  const { t } = useTranslation();
   const usage = readEventUsage(event);
   if (!usage) return null;
 
@@ -68,25 +70,27 @@ export function TokenUsageSection({ event }: { event: EventRow }) {
     <section className="rounded-md border border-border bg-card overflow-hidden">
       <div className="px-3.5 py-2 border-b border-border">
         <div className="text-xs font-semibold text-card-foreground">
-          Token Usage
+          {t("detail.tokenUsage")}
         </div>
       </div>
       <div className="grid grid-cols-1 gap-3 p-3.5 sm:grid-cols-2">
-        <TokenUsageCard label="Last Call" usage={usage.last_token_usage} />
-        <TokenUsageCard label="Session Total" usage={usage.total_token_usage} />
+        <TokenUsageCard label={t("detail.lastCall")} usage={usage.last_token_usage} />
+        <TokenUsageCard label={t("detail.sessionTotal")} usage={usage.total_token_usage} />
       </div>
     </section>
   );
 }
 
 function TokenUsageCard({ label, usage }: { label: string; usage: TokenUsage }) {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-md border border-border bg-muted/40 p-3">
       <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
         {label}
       </div>
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-        {tokenUsageRows(usage).map((row) => (
+        {tokenUsageRows(usage, t).map((row) => (
           <div key={row.label} className="contents">
             <dt className="text-muted-foreground">{row.label}</dt>
             <dd className="text-right font-semibold text-card-foreground tabular-nums">
@@ -99,13 +103,13 @@ function TokenUsageCard({ label, usage }: { label: string; usage: TokenUsage }) 
   );
 }
 
-function tokenUsageRows(usage: TokenUsage): Array<{ label: string; value: number }> {
+function tokenUsageRows(usage: TokenUsage, t: (key: string) => string): Array<{ label: string; value: number }> {
   return [
-    { label: "Input", value: usage.input_tokens },
-    { label: "Output", value: usage.output_tokens },
-    { label: "Reasoning", value: usage.reasoning_output_tokens },
-    { label: "Cached", value: usage.cached_input_tokens },
-    { label: "Total", value: usage.total_tokens },
+    { label: t("detail.input"), value: usage.input_tokens },
+    { label: t("detail.output"), value: usage.output_tokens },
+    { label: t("detail.reasoning"), value: usage.reasoning_output_tokens },
+    { label: t("detail.cached"), value: usage.cached_input_tokens },
+    { label: t("detail.total"), value: usage.total_tokens },
   ];
 }
 
@@ -267,6 +271,7 @@ function splitAtLastOutputMarker(content: string): [string, string] | null {
 }
 
 function ToolOutputContent({ event }: { event: EventRow }) {
+  const { t } = useTranslation();
   const { content } = event;
 
   if (!content) return null;
@@ -290,7 +295,7 @@ function ToolOutputContent({ event }: { event: EventRow }) {
           <polyline points="20 6 9 17 4 12" />
         </svg>
         <span className="text-xs font-semibold text-card-foreground">
-          Output
+          {t("detail.output")}
         </span>
       </div>
       {parsed ? (
@@ -328,6 +333,7 @@ function valueToString(v: unknown): string {
 }
 
 function ToolEventContent({ event }: { event: EventRow }) {
+  const { t } = useTranslation();
   const { metadata } = event;
   const meta = parseRecord(metadata);
 
@@ -372,7 +378,7 @@ function ToolEventContent({ event }: { event: EventRow }) {
           <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
         </svg>
         <span className="text-xs font-semibold text-card-foreground">
-          {toolName || "MCP Tool Call"}
+          {toolName || t("detail.mcpToolCall")}
         </span>
       </div>
       <div className="p-3.5 space-y-1.5">
@@ -392,6 +398,7 @@ function ToolEventContent({ event }: { event: EventRow }) {
 }
 
 function ToolCallContent({ event }: { event: EventRow }) {
+  const { t } = useTranslation();
   const { content, metadata } = event;
   let toolName = "";
   let toolArgs: Record<string, unknown> | null = null;
@@ -445,7 +452,7 @@ function ToolCallContent({ event }: { event: EventRow }) {
           <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
         </svg>
         <span className="text-xs font-semibold text-card-foreground">
-          {toolName || "Tool Call"}
+          {toolName || t("detail.toolCall")}
         </span>
       </div>
       {toolArgs && (
@@ -539,6 +546,7 @@ export function MetadataSection({
   sourceLineNo?: number | null;
   label?: string;
 }) {
+  const { t } = useTranslation();
   const parsed = parseMetadata(metadata);
 
   // Show Detail displays the original JSONL line for this event, not the
@@ -568,10 +576,10 @@ export function MetadataSection({
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
-        {label ?? "Show Detail"}
+        {label ?? t("detail.showDetail")}
         {sourceLineNo != null && (
           <span className="text-muted-foreground font-normal ml-1">
-            JSONL #{sourceLineNo}
+            {t("detail.jsonlLine", { lineNo: sourceLineNo })}
           </span>
         )}
       </summary>

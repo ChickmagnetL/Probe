@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { usePanelStore } from "../../stores/panel";
 import { useSessionStore } from "../../stores/session";
 import { DraggableDivider } from "./DraggableDivider";
@@ -56,6 +57,7 @@ const PillTabBar = memo(function PillTabBar({
   panelId,
   panelCount,
 }: PillTabBarProps) {
+  const { t } = useTranslation();
   const changeView = usePanelStore((s) => s.changeView);
   const splitPanel = usePanelStore((s) => s.splitPanel);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -115,7 +117,7 @@ const PillTabBar = memo(function PillTabBar({
                     : "var(--color-muted-foreground, #64748B)",
               }}
             >
-              {v === "graph" ? "Graph" : v === "timeline" ? "Timeline" : v === "chat" ? "Chat" : "Raw"}
+              {t(`panel.${v}`)}
             </button>
           ))}
         </div>
@@ -131,7 +133,7 @@ const PillTabBar = memo(function PillTabBar({
             opacity: canSplit ? 1 : 0.3,
             pointerEvents: canSplit ? "auto" : "none",
           }}
-          title={canSplit ? "Split panel" : undefined}
+          title={canSplit ? t("panel.splitPanel") : undefined}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -160,6 +162,7 @@ const CloseButton = memo(function CloseButton({
   panelId,
   panelCount,
 }: CloseButtonProps) {
+  const { t } = useTranslation();
   const closePanel = usePanelStore((s) => s.closePanel);
 
   if (panelCount <= 1) return null;
@@ -186,7 +189,7 @@ const CloseButton = memo(function CloseButton({
         e.currentTarget.style.background = "rgba(255, 255, 255, 0.72)";
         e.currentTarget.style.borderColor = "var(--color-border, #E2E8F0)";
       }}
-      aria-label="Close panel"
+      aria-label={t("panel.closePanel")}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
         <line x1="6" y1="6" x2="18" y2="18" />

@@ -1,29 +1,12 @@
 import { useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useImportStore } from "../../stores/import";
 import { useSessionStore } from "../../stores/session";
 import { ProgressBar } from "./ProgressBar";
 import { formatTokens } from "../../lib/format";
 
-const IMPORT_DETAIL_LABELS: Record<string, string> = {
-  parse_errors: "Parse Errors",
-  raw_records: "Raw Records",
-  conversation_meta_raw: "Session Info",
-  turn_manifest: "Turn Settings",
-  message_items_raw: "Messages",
-  reasoning_items_raw: "Reasoning",
-  tool_calls_raw: "Tool Calls",
-  tool_call_outputs_raw: "Tool Outputs",
-  tool_call_pairs: "Tool Call Pairs",
-  telemetry_events: "Usage Stats",
-  lifecycle_events: "Task Status",
-  structured_tool_end_events: "Tool Results",
-  collaboration_events: "Sub-agent Collab",
-  search_events: "Web Search",
-  system_events: "System Status",
-  compaction_events: "Context Compaction",
-};
-
 export function ImportModal() {
+  const { t } = useTranslation();
   const {
     modalOpen,
     closeModal,
@@ -76,7 +59,7 @@ export function ImportModal() {
         <button
           onClick={handleClose}
           className="absolute top-3 right-3 btn-ghost p-1.5 z-10 hover:scale-112 active:scale-90 transition-transform duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
-          aria-label="Close import dialog"
+          aria-label={t("import.close")}
           type="button"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -94,9 +77,9 @@ export function ImportModal() {
                 <line x1="9" y1="14" x2="15" y2="14" />
               </svg>
             </div>
-            <h2 className="text-xl font-semibold text-foreground">Import Files</h2>
+            <h2 className="text-xl font-semibold text-foreground">{t("import.title")}</h2>
             <p className="text-sm text-muted-foreground mt-1.5">
-              Select a rollout JSONL file or directory to begin
+              {t("import.subtitle")}
             </p>
           </div>
 
@@ -111,7 +94,7 @@ export function ImportModal() {
               </div>
               <div>
                 <p className="text-sm font-medium text-foreground mb-1">
-                  {inputPath ? "File selected" : "Choose files to import"}
+                  {inputPath ? t("import.fileSelected") : t("import.chooseFiles")}
                 </p>
                 {inputPath && (
                   <p className="text-xs text-accent font-mono bg-muted px-3 py-1.5 rounded inline-block">
@@ -128,7 +111,7 @@ export function ImportModal() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
                     <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
                   </svg>
-                  Select Folder
+                  {t("import.selectFolder")}
                 </button>
                 <button
                   onClick={() => openPicker(false)}
@@ -139,7 +122,7 @@ export function ImportModal() {
                     <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                   </svg>
-                  Select File
+                  {t("import.selectFile")}
                 </button>
               </div>
             </div>
@@ -157,7 +140,7 @@ export function ImportModal() {
                 {loading ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Importing...
+                    {t("import.importing")}
                   </>
                 ) : (
                   <>
@@ -165,7 +148,7 @@ export function ImportModal() {
                       <polyline points="13 17 18 12 13 7" />
                       <polyline points="6 17 11 12 6 7" />
                     </svg>
-                    Start Import
+                    {t("import.startImport")}
                   </>
                 )}
               </button>
@@ -178,7 +161,7 @@ export function ImportModal() {
               <ProgressBar value={60} />
               <div className="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <div className="w-4 h-4 border-2 border-muted border-t-accent rounded-full animate-spin" />
-                Processing files...
+                {t("import.processing")}
               </div>
             </div>
           )}
@@ -192,7 +175,7 @@ export function ImportModal() {
                 <line x1="9" y1="9" x2="15" y2="15" />
               </svg>
               <div>
-                <p className="font-semibold text-red-800">Import failed</p>
+                <p className="font-semibold text-red-800">{t("import.failed")}</p>
                 <p className="mt-0.5 text-red-600">{error}</p>
               </div>
             </div>
@@ -208,20 +191,20 @@ export function ImportModal() {
                   </svg>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-emerald-800">Import complete</p>
-                  <p className="text-xs text-emerald-600 mt-0.5">{result.imported_session_count} sessions imported successfully</p>
+                  <p className="text-sm font-semibold text-emerald-800">{t("import.complete")}</p>
+                  <p className="text-xs text-emerald-600 mt-0.5">{t("import.sessionsImported", { count: result.imported_session_count })}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
-                <StatCard label="Files" value={result.total_files} />
-                <StatCard label="Records" value={result.parsed_records} />
-                <StatCard label="Sessions" value={result.imported_session_count} />
-                <StatCard label="Parse Errors" value={result.parse_errors} isError={result.parse_errors > 0} />
-                <StatCard label="Needs Review" value={result.unknown_record_count} isError={result.unknown_record_count > 0} />
-                <StatCard label="Root Views" value={result.root_session_count} />
+                <StatCard label={t("importStats.files")} value={result.total_files} />
+                <StatCard label={t("importStats.records")} value={result.parsed_records} />
+                <StatCard label={t("importStats.sessions")} value={result.imported_session_count} />
+                <StatCard label={t("importStats.parseErrors")} value={result.parse_errors} isError={result.parse_errors > 0} />
+                <StatCard label={t("importStats.needsReview")} value={result.unknown_record_count} isError={result.unknown_record_count > 0} />
+                <StatCard label={t("importStats.rootViews")} value={result.root_session_count} />
                 <StatCard
-                  label="Total Tokens"
+                  label={t("importStats.totalTokens")}
                   value={formatTokens(
                     result.sessions.reduce(
                       (acc, s) =>
@@ -239,14 +222,14 @@ export function ImportModal() {
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground transition-transform group-open:rotate-90">
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
-                    Import Details
+                    {t("import.details")}
                   </summary>
                   <div className="border-t border-border px-4 py-3">
                     <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
                       {Object.entries(result.table_counts).map(([detailKey, count]) => (
                         <div key={detailKey} className="flex justify-between items-center text-sm py-0.5">
                           <span className="text-muted-foreground text-xs">
-                            {IMPORT_DETAIL_LABELS[detailKey] ?? "Other"}
+                            {t(`importDetails.${detailKey}`, { defaultValue: t("importDetails.other") })}
                           </span>
                           <span className="font-semibold text-foreground tabular-nums">{count}</span>
                         </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useLayoutEffect, memo } from "react";
+import { useTranslation } from "react-i18next";
 import { VariableSizeList as VirtualList } from "react-window";
 import { invoke } from "../../ipc/invoke";
 import { useSessionStore } from "../../stores/session";
@@ -206,6 +207,7 @@ function VirtualRow({ index, data, style }: VirtualRowProps) {
 // ── Main component ─────────────────────────────────────
 
 export function RawView() {
+  const { t } = useTranslation();
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
   const detail = useSessionStore((s) => s.detail);
   const selectedEventId = useSessionStore((s) => s.selectedEventId);
@@ -483,7 +485,7 @@ export function RawView() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        Loading...
+        {t("raw.loading")}
       </div>
     );
   }
@@ -491,7 +493,7 @@ export function RawView() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm px-6 text-center">
-        Could not read source file: {error}
+        {t("raw.readError", { error })}
       </div>
     );
   }
@@ -499,7 +501,7 @@ export function RawView() {
   if (!rawContent || lines.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        No source file available for this session
+        {t("raw.noSource")}
       </div>
     );
   }

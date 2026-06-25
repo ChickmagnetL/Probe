@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import type { EventRow } from "../../ipc/types";
 import { EventNode } from "./EventNode";
 
@@ -9,6 +10,7 @@ interface TimelineViewProps {
 }
 
 export function TimelineView({ events, selectedEventId, onSelectEvent }: TimelineViewProps) {
+  const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,13 +33,13 @@ export function TimelineView({ events, selectedEventId, onSelectEvent }: Timelin
       <div className="shrink-0 flex items-center justify-end px-5 pt-8 pb-2">
         {events.length > 0 && (
           <span className="text-[11px] font-medium text-muted-foreground">
-            {events.length} events
+            {t("timeline.events_other", { count: events.length })}
           </span>
         )}
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 pb-4">
         {events.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">No events</p>
+          <p className="text-sm text-muted-foreground text-center py-8">{t("timeline.noEvents")}</p>
         ) : (
           <div>
             {events.map((ev, i) => (

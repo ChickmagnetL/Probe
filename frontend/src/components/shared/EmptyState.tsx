@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 interface EmptyStateProps {
   title: string;
   description?: string;
@@ -6,6 +8,8 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ title, description, action, showShortcut }: EmptyStateProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-5 p-16 text-center">
       <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center">
@@ -19,7 +23,7 @@ export function EmptyState({ title, description, action, showShortcut }: EmptySt
           <p className="mt-1.5 text-sm text-muted-foreground max-w-xs leading-relaxed">{description}</p>
         )}
         {showShortcut && (
-          <p className="text-xs text-muted-foreground mt-2">Press ⌘I to import files</p>
+          <p className="text-xs text-muted-foreground mt-2">{t("empty.shortcut")}</p>
         )}
       </div>
       {action}

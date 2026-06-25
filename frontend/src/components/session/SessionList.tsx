@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useSessionStore } from "../../stores/session";
 import { SessionCard } from "./SessionCard";
 import { ProjectFolder } from "./ProjectFolder";
@@ -22,19 +23,22 @@ interface SessionListProps {
 }
 
 const UNKNOWN_GROUP_KEY = "__unknown__";
-const UNKNOWN_GROUP_NAME = "Unknown";
 
 // Date bucket order (newest first). Sessions fall into the first matching
 // bucket based on their start_time vs the current calendar day. "This Week" uses a
 // rolling 7-day window excluding Today/Yesterday.
 type BucketKey = "today" | "yesterday" | "this_week" | "older";
 const BUCKET_ORDER: BucketKey[] = ["today", "yesterday", "this_week", "older"];
-const BUCKET_LABELS: Record<BucketKey, string> = {
-  today: "Today",
-  yesterday: "Yesterday",
-  this_week: "This Week",
-  older: "Older",
-};
+
+function useBucketLabels(): Record<BucketKey, string> {
+  const { t } = useTranslation();
+  return {
+    today: t("session.today"),
+    yesterday: t("session.yesterday"),
+    this_week: t("session.thisWeek"),
+    older: t("session.older"),
+  };
+}
 
 function startOfDay(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -56,11 +60,11 @@ function groupKeyFor(session: SessionRow): string {
   return session.cwd ?? UNKNOWN_GROUP_KEY;
 }
 
-function groupNameFor(key: string): string {
-  if (key === UNKNOWN_GROUP_KEY) return UNKNOWN_GROUP_NAME;
+function groupNameFor(key: string, t: (key: string) => string): string {
+  if (key === UNKNOWN_GROUP_KEY) return t("session.unknown");
   // Basename of the cwd path. Handle both POSIX and Windows separators.
   const parts = key.split(/[/\\]/).filter(Boolean);
-  return parts.length > 0 ? parts[parts.length - 1] : UNKNOWN_GROUP_NAME;
+  return parts.length > 0 ? parts[parts.length - 1] : t("session.unknown");
 }
 
 interface BucketData {
@@ -79,6 +83,8 @@ interface ProjectGroupData {
 }
 
 export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) {
+  const { t } = useTranslation();
+  const bucketLabels = useBucketLabels();
   const sessions = useSessionStore((s) => s.sessions);
   const loading = useSessionStore((s) => s.loading);
   const selectedIds = useSessionStore((s) => s.selectedIds);
@@ -210,13 +216,13 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
         const roots = byBucket.get(bk);
         if (roots && roots.length > 0) {
           // roots are already sorted newest-first (from tree sort).
-          buckets.push({ key: bk, label: BUCKET_LABELS[bk], roots });
+          buckets.push({ key: bk, label: bucketLabels[bk], roots });
         }
       }
 
       groupList.push({
         key,
-        name: groupNameFor(key),
+        name: groupNameFor(key, t),
         fullPath: key === UNKNOWN_GROUP_KEY ? null : key,
         buckets,
         latestStart: latest,
@@ -226,7 +232,7 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
     // Sort groups by latest session start_time, newest first.
     groupList.sort((a, b) => b.latestStart.localeCompare(a.latestStart));
     return groupList;
-  }, [tree]);
+  }, [tree, t, bucketLabels]);
 
   // Flatten into visible rows (used only for indicator re-measure triggers).
   // Respect project-folder and date-bucket collapse state in both normal and
@@ -376,8 +382,8 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
           <SkeletonLines count={3} />
         ) : !hasContent ? (
           <EmptyState
-            title="No sessions"
-            description="Import files to create sessions"
+            title={t("session.noSessions")}
+            description={t("session.importToCreate")}
             action={emptyAction}
           />
         ) : (
@@ -390,7 +396,7 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
                   fullPath={group.fullPath}
                   collapsed={collapsed}
                   count={group.totalSessions}
-                  latestRelative={group.latestStart ? formatRelative(group.latestStart) : null}
+                  latestRelative={group.latestStart ? formatRelative(group.latestStart, t) : null}
                   onToggle={() => toggleGroup(group)}
                 />
                 {!collapsed && (

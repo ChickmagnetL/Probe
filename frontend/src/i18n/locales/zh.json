@@ -1,0 +1,170 @@
+{
+  "app": {
+    "emptyTitle": "选择会话",
+    "emptyDescription": "从右侧面板选择一个会话，或导入新文件开始使用",
+    "importFiles": "导入文件",
+    "sessions": "会话",
+    "scanning": "正在扫描和导入会话",
+    "settings": "设置",
+    "backToSessions": "返回会话列表"
+  },
+  "sort": {
+    "newest": "最新",
+    "oldest": "最早",
+    "latestStart": "最近开始"
+  },
+  "delete": {
+    "title": "删除会话",
+    "message_one": "确定要删除 {{count}} 个会话吗？此操作不可撤销。",
+    "message_other": "确定要删除 {{count}} 个会话吗？此操作不可撤销。",
+    "confirm": "删除",
+    "alsoDeleteFiles": "同时删除原始文件",
+    "deleteSelected": "删除所选",
+    "exitSelection": "退出选择",
+    "deleteSessions": "删除会话",
+    "selectAll": "全选"
+  },
+  "import": {
+    "title": "导入文件",
+    "subtitle": "选择 JSONL 文件或目录开始导入",
+    "fileSelected": "已选择文件",
+    "chooseFiles": "选择要导入的文件",
+    "selectFolder": "选择文件夹",
+    "selectFile": "选择文件",
+    "importing": "导入中...",
+    "startImport": "开始导入",
+    "processing": "正在处理文件...",
+    "failed": "导入失败",
+    "complete": "导入完成",
+    "sessionsImported": "成功导入 {{count}} 个会话",
+    "details": "导入详情",
+    "close": "关闭导入对话框"
+  },
+  "importStats": {
+    "files": "文件",
+    "records": "记录",
+    "sessions": "会话",
+    "parseErrors": "解析错误",
+    "needsReview": "待审核",
+    "rootViews": "根视图",
+    "totalTokens": "总 Tokens"
+  },
+  "importDetails": {
+    "parse_errors": "解析错误",
+    "raw_records": "原始记录",
+    "conversation_meta_raw": "会话信息",
+    "turn_manifest": "轮次设置",
+    "message_items_raw": "消息",
+    "reasoning_items_raw": "推理",
+    "tool_calls_raw": "工具调用",
+    "tool_call_outputs_raw": "工具输出",
+    "tool_call_pairs": "工具调用配对",
+    "telemetry_events": "使用统计",
+    "lifecycle_events": "任务状态",
+    "structured_tool_end_events": "工具结果",
+    "collaboration_events": "子代理协作",
+    "search_events": "网页搜索",
+    "system_events": "系统状态",
+    "compaction_events": "上下文压缩",
+    "other": "其他"
+  },
+  "confirm": {
+    "cancel": "取消"
+  },
+  "empty": {
+    "shortcut": "按 ⌘I 导入文件"
+  },
+  "error": {
+    "somethingWrong": "出现错误",
+    "tryAgain": "重试"
+  },
+  "filter": {
+    "searchPlaceholder": "搜索...",
+    "searchSessions": "搜索会话",
+    "sortSessions": "排序会话"
+  },
+  "detail": {
+    "tokenUsage": "Token 用量",
+    "lastCall": "最近调用",
+    "sessionTotal": "会话总计",
+    "input": "输入",
+    "output": "输出",
+    "reasoning": "推理",
+    "cached": "缓存",
+    "total": "总计",
+    "showDetail": "查看详情",
+    "jsonlLine": "JSONL #{{lineNo}}",
+    "toolCall": "工具调用",
+    "mcpToolCall": "MCP 工具调用"
+  },
+  "panel": {
+    "graph": "图谱",
+    "timeline": "时间线",
+    "chat": "对话",
+    "raw": "原始",
+    "splitPanel": "拆分面板",
+    "closePanel": "关闭面板"
+  },
+  "split": {
+    "right": "向右拆分",
+    "down": "向下拆分"
+  },
+  "session": {
+    "today": "今天",
+    "yesterday": "昨天",
+    "thisWeek": "本周",
+    "older": "更早",
+    "unknown": "未知",
+    "noSessions": "暂无会话",
+    "importToCreate": "导入文件以创建会话",
+    "collapseChildren": "折叠子项",
+    "expandChildren": "展开子项",
+    "deselectSession": "取消选择会话",
+    "selectSession": "选择会话"
+  },
+  "timeline": {
+    "events_one": "{{count}} 个事件",
+    "events_other": "{{count}} 个事件",
+    "noEvents": "暂无事件"
+  },
+  "conversation": {
+    "turns_one": "{{count}} 个回合",
+    "turns_other": "{{count}} 个回合",
+    "noEvents": "暂无事件",
+    "systemPrompts_one": "{{count}} 个系统提示",
+    "systemPrompts_other": "{{count}} 个系统提示",
+    "steps_one": "{{count}} 个步骤",
+    "steps_other": "{{count}} 个步骤",
+    "empty": "（空）"
+  },
+  "raw": {
+    "loading": "加载中...",
+    "readError": "无法读取源文件：{{error}}",
+    "noSource": "此会话没有可用的源文件"
+  },
+  "graphControls": {
+    "legend": "图例",
+    "reset": "重置",
+    "hide": "隐藏",
+    "show": "显示"
+  },
+  "settings": {
+    "title": "设置",
+    "subtitle": "配置 Probe 扫描 Codex CLI 会话的路径。",
+    "codexPath": "Codex CLI 路径",
+    "default": "默认：",
+    "save": "保存",
+    "saving": "保存中...",
+    "close": "关闭设置",
+    "general": "通用",
+    "interface": "界面",
+    "language": "语言",
+    "browse": "浏览"
+  },
+  "format": {
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
+  }
+}

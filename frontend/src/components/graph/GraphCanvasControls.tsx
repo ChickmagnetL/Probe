@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { kindColor } from "../../lib/color";
 import { eventTypeLabel } from "./graph-labels";
 import type { LegendItem } from "./graph-legend-utils";
@@ -19,10 +20,12 @@ export function GraphCanvasControls({
   hiddenKinds,
   onToggleKind,
 }: GraphCanvasControlsProps) {
+  const { t } = useTranslation();
+
   return (
     <>
       <div className="pointer-events-auto absolute top-4 right-4 glass-card rounded-xl p-3">
-        <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">Legend</div>
+        <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">{t("graphControls.legend")}</div>
         <div className="flex flex-col gap-2 text-xs">
           {visibleKinds.map(item => (
             <LegendDot
@@ -46,7 +49,7 @@ export function GraphCanvasControls({
             <polyline points="1 4 1 10 7 10" />
             <path d="M3.51 15a9 9 0 102.13-9.36L1 10" />
           </svg>
-          Reset
+          {t("graphControls.reset")}
         </button>
         <div className="w-px bg-border my-1" />
         <button
@@ -68,7 +71,7 @@ export function GraphCanvasControls({
               </>
             )}
           </svg>
-          {labelsVisible ? "Hide" : "Show"}
+          {labelsVisible ? t("graphControls.hide") : t("graphControls.show")}
         </button>
       </div>
     </>
@@ -83,11 +86,13 @@ interface LegendDotProps {
 }
 
 function LegendDot({ color, label, isHidden, onClick }: LegendDotProps) {
+  const { t } = useTranslation();
+
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={`${isHidden ? "Show" : "Hide"} ${label} nodes`}
+      aria-label={`${isHidden ? t("graphControls.show") : t("graphControls.hide")} ${label} nodes`}
       className="flex items-center gap-2 text-left text-card-foreground cursor-pointer hover:opacity-80 transition-opacity"
     >
       <div
