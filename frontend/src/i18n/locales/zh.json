@@ -98,10 +98,10 @@
     "mcpToolCall": "MCP 工具调用"
   },
   "panel": {
-    "graph": "图谱",
-    "timeline": "时间线",
-    "chat": "对话",
-    "raw": "原始",
+    "graph": "Graph",
+    "timeline": "Timeline",
+    "chat": "Chat",
+    "raw": "Raw",
     "splitPanel": "拆分面板",
     "closePanel": "关闭面板"
   },
