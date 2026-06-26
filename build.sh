@@ -84,9 +84,6 @@ build_sidecar() {
 
     cp "$src" "$dst"
     chmod +x "$dst"
-    # Strip PyInstaller's ad-hoc signature — macOS Gatekeeper rejects
-    # app bundles containing ad-hoc signed Mach-O binaries as "damaged".
-    codesign --remove-signature "$dst" 2>/dev/null || true
     log "Sidecar binary: $dst"
 }
 

@@ -58,9 +58,6 @@ jobs:
         run: |
           mv engine/dist/probe-engine "tauri/probe-engine-${{ matrix.rust_target }}"
           chmod +x "tauri/probe-engine-${{ matrix.rust_target }}"
-          # Strip PyInstaller's ad-hoc signature — macOS Gatekeeper rejects
-          # app bundles containing ad-hoc signed Mach-O binaries as "damaged".
-          codesign --remove-signature "tauri/probe-engine-${{ matrix.rust_target }}" || true
 
       - name: Rename sidecar for Tauri (Windows)
         if: runner.os == 'Windows'
