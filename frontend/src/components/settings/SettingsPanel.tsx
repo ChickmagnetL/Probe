@@ -23,6 +23,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [path, setPath] = useState("");
+  const [lang, setLang] = useState("");
   const [saving, setSaving] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const langRef = useRef<HTMLDivElement>(null);
@@ -41,6 +42,23 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       setPath(settings.codex_path);
     }
   }, [open, settings.codex_path, path]);
+
+  // Reactive prefill: when settings finish loading and the local draft is
+  // still empty, sync interface_language (i18n fallback) into the draft.
+  useEffect(() => {
+    if (open && !lang) {
+      setLang(settings.interface_language || i18n.language || "");
+    }
+  }, [open, settings.interface_language, lang]);
+
+  // Discard unsaved drafts when the panel closes so reopening reseed from
+  // the persisted values (the prefill effects above only run on empty drafts).
+  useEffect(() => {
+    if (!open) {
+      setPath("");
+      setLang("");
+    }
+  }, [open]);
 
   const handleClose = useCallback(() => {
     onClose();
@@ -78,29 +96,31 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
   const handleSave = useCallback(async () => {
     const trimmed = path.trim();
-    if (!trimmed) return;
+    const langValue = lang.trim();
+    if (!trimmed && !langValue) return;
     setSaving(true);
     try {
-      await setCodexPath(trimmed);
-      void runIncrementalImport(trimmed);
+      if (trimmed) {
+        await setCodexPath(trimmed);
+        void runIncrementalImport(trimmed);
+      }
+      if (langValue) {
+        await setInterfaceLanguage(langValue);
+        await i18n.changeLanguage(langValue);
+      }
       onClose();
     } finally {
       setSaving(false);
     }
-  }, [path, setCodexPath, runIncrementalImport, onClose]);
-
-  const handleLanguageChange = useCallback(
-    async (lang: string) => {
-      await i18n.changeLanguage(lang);
-      await setInterfaceLanguage(lang);
-    },
-    [setInterfaceLanguage],
-  );
+  }, [path, lang, setCodexPath, setInterfaceLanguage, runIncrementalImport, onClose]);
 
   if (!open) return null;
 
   const defaultHint = settings.default_codex_path;
   const currentLang = i18n.language;
+  const pathDirty = path.trim() !== (settings.codex_path ?? "");
+  const langDirty = lang !== (settings.interface_language || currentLang || "");
+  const dirty = pathDirty || langDirty;
 
   return (
     <div
@@ -182,28 +202,28 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                       onClick={() => setLangOpen((v) => !v)}
                       className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-ring/40"
                     >
-                      <span>{currentLang === "zh" ? "中文" : "English"}</span>
+                      <span>{(lang || currentLang) === "zh" ? "中文" : "English"}</span>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0 ml-2">
                         <polyline points="6 9 12 15 18 9" />
                       </svg>
                     </button>
                     {langOpen && (
                       <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
-                        {(["en", "zh"] as const).map((lang) => (
+                        {(["en", "zh"] as const).map((value) => (
                           <button
-                            key={lang}
+                            key={value}
                             type="button"
                             onClick={() => {
-                              handleLanguageChange(lang);
+                              setLang(value);
                               setLangOpen(false);
                             }}
                             className={`w-full px-3 py-2 text-sm text-left transition-colors ${
-                              currentLang === lang
+                              (lang || currentLang) === value
                                 ? "bg-primary/10 text-foreground"
                                 : "text-foreground hover:bg-accent"
                             }`}
                           >
-                            {lang === "zh" ? "中文" : "English"}
+                            {value === "zh" ? "中文" : "English"}
                           </button>
                         ))}
                       </div>
@@ -237,7 +257,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               </button>
               <button
                 onClick={handleSave}
-                disabled={loading || saving || !path.trim()}
+                disabled={loading || saving || !dirty}
                 className="btn-primary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 type="button"
               >
