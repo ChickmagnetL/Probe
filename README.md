@@ -9,14 +9,16 @@ AI 驱动的代码库分析工具。
 **方式一：Homebrew Cask（推荐）**
 
 ```bash
-# 添加自定义 tap（只需一次）
-brew tap ChickmagnetL/probe https://github.com/ChickmagnetL/homebrew-probe
-
-# 安装
-brew install --cask probe
+brew install ChickmagnetL/probe/probe
 ```
 
 通过 Homebrew 安装的应用不带 macOS Gatekeeper 隔离属性，可直接打开使用。
+
+升级时运行：
+
+```bash
+brew upgrade probe
+```
 
 **方式二：GitHub Release DMG**
 
