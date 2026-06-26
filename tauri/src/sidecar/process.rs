@@ -24,12 +24,24 @@ impl Drop for SidecarInner {
 
 /// Returns true if running as a bundled application (not from cargo dev).
 ///
-/// Checks whether the sidecar binary (`probe-engine` / `probe-engine.exe`)
-/// exists next to the current executable. This works cross-platform:
+/// In debug (dev) builds, always returns false: Tauri's `externalBin`
+/// config copies `probe-engine` next to the dev exe as well, so presence
+/// of the binary next to the exe cannot distinguish dev from bundled. Dev
+/// mode must run the current Python source via the dev branch.
+///
+/// In release builds, checks whether the sidecar binary
+/// (`probe-engine` / `probe-engine.exe`) exists next to the current
+/// executable. This works cross-platform:
 /// - macOS `.app` bundle: binaries are in `Contents/MacOS/`
 /// - Windows NSIS install: binaries are in the install directory
-/// - Dev (`cargo run`): the sidecar binary is not present next to the exe
 fn is_bundled() -> bool {
+    // Dev builds always run from source; the exe-parent binary check below
+    // is unreliable in dev because Tauri externalBin places probe-engine
+    // next to the dev exe too, so we'd otherwise launch a stale artifact.
+    if cfg!(debug_assertions) {
+        return false;
+    }
+
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             #[cfg(target_os = "windows")]
