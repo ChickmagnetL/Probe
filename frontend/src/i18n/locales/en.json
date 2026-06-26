@@ -117,6 +117,7 @@
     "unknown": "Unknown",
     "noSessions": "No sessions",
     "importToCreate": "Import files to create sessions",
+    "noResults": "No sessions found for \"{{query}}\"",
     "collapseChildren": "Collapse children",
     "expandChildren": "Expand children",
     "deselectSession": "Deselect session",

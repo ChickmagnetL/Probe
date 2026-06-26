@@ -117,6 +117,7 @@
     "unknown": "未知",
     "noSessions": "暂无会话",
     "importToCreate": "导入文件以创建会话",
+    "noResults": "未找到「{{query}}」的会话",
     "collapseChildren": "折叠子项",
     "expandChildren": "展开子项",
     "deselectSession": "取消选择会话",

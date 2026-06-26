@@ -82,7 +82,7 @@ interface ProjectGroupData {
   totalSessions: number;
 }
 
-export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) {
+export function SessionList({ onSessionSelect, emptyAction, filterText }: SessionListProps) {
   const { t } = useTranslation();
   const bucketLabels = useBucketLabels();
   const sessions = useSessionStore((s) => s.sessions);
@@ -381,11 +381,17 @@ export function SessionList({ onSessionSelect, emptyAction }: SessionListProps) 
         {loading && sessions.length === 0 ? (
           <SkeletonLines count={3} />
         ) : !hasContent ? (
-          <EmptyState
-            title={t("session.noSessions")}
-            description={t("session.importToCreate")}
-            action={emptyAction}
-          />
+          filterText ? (
+            <EmptyState
+              title={t("session.noResults", { query: filterText })}
+            />
+          ) : (
+            <EmptyState
+              title={t("session.noSessions")}
+              description={t("session.importToCreate")}
+              action={emptyAction}
+            />
+          )
         ) : (
           groups.map((group) => {
             const collapsed = !expandedGroups.has(group.key);

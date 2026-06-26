@@ -37,8 +37,9 @@ export function FilterBar({
 
   return (
     <div className="flex items-center gap-1 px-3 py-2">
-      {/* Search */}
-      {searchOpen ? (
+      {/* Search: once opened (or while a query exists), keep the input visible so
+          the user can edit/clear it even when a search yields no matches. */}
+      {searchOpen || search ? (
         <div className="relative flex-1">
           <svg
             className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none"

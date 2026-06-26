@@ -375,7 +375,7 @@ export function AppView() {
                 </span>
               )}
             </div>
-            {sessions.length > 0 && !loading && (
+            {!loading && (sessions.length > 0 || search.trim()) && (
               <FilterBar
                 search={search}
                 onSearchChange={setSearch}
