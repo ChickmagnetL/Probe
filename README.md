@@ -20,6 +20,12 @@ brew install ChickmagnetL/probe/probe
 brew upgrade probe
 ```
 
+卸载：
+
+```bash
+brew uninstall probe
+```
+
 **方式二：GitHub Release DMG**
 
 从 [Releases](https://github.com/ChickmagnetL/Probe/releases) 下载 DMG 文件：
