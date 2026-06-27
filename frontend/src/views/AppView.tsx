@@ -28,9 +28,8 @@ import type { EventRow } from "../ipc/types";
 function useSortOptions() {
   const { t } = useTranslation();
   return [
-    { value: "imported_at:desc", label: t("sort.newest") },
-    { value: "imported_at:asc", label: t("sort.oldest") },
-    { value: "start_time:desc", label: t("sort.latestStart") },
+    { value: "start_time:desc", label: t("sort.newest") },
+    { value: "start_time:asc", label: t("sort.oldest") },
   ];
 }
 

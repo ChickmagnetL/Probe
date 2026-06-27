@@ -82,9 +82,14 @@ interface ProjectGroupData {
   totalSessions: number;
 }
 
-export function SessionList({ onSessionSelect, emptyAction, filterText }: SessionListProps) {
+export function SessionList({ onSessionSelect, emptyAction, filterText, sortBy }: SessionListProps) {
   const { t } = useTranslation();
   const bucketLabels = useBucketLabels();
+  // sortBy is a "field:order" string (e.g. "start_time:asc"). Only the order
+  // is consumed here — the field is fixed to start_time (session creation
+  // time) everywhere, so sorting/bucketing/display share one dimension.
+  const [, order = "desc"] = (sortBy ?? "start_time:desc").split(":");
+  const desc = order !== "asc";
   const sessions = useSessionStore((s) => s.sessions);
   const loading = useSessionStore((s) => s.loading);
   const selectedIds = useSessionStore((s) => s.selectedIds);
@@ -168,24 +173,29 @@ export function SessionList({ onSessionSelect, emptyAction, filterText }: Sessio
       }));
     }
 
-    // Sort children within each parent by start_time (newest first).
+    // Sort sessions by their start_time (session creation time). The UI's
+    // "x days ago" label also shows start_time, so sorting, bucketing, and
+    // the displayed relative time all share one dimension — no mismatch.
+    const valueOf = (s: SessionRow): string => s.start_time ?? "";
+
+    // Sort children within each parent by the selected field and direction.
     for (const children of childrenByParent.values()) {
       children.sort((a, b) => {
-        const at = a.start_time ?? "";
-        const bt = b.start_time ?? "";
-        return bt.localeCompare(at);
+        const at = valueOf(a);
+        const bt = valueOf(b);
+        return desc ? bt.localeCompare(at) : at.localeCompare(bt);
       });
     }
 
-    // Root sessions: newest first.
+    // Root sessions follow the same sort.
     roots.sort((a, b) => {
-      const at = a.start_time ?? "";
-      const bt = b.start_time ?? "";
-      return bt.localeCompare(at);
+      const at = valueOf(a);
+      const bt = valueOf(b);
+      return desc ? bt.localeCompare(at) : at.localeCompare(bt);
     });
 
     return buildTree(roots, 0);
-  }, [sessions]);
+  }, [sessions, sortBy, desc]);
 
   // Group root-level tree items by cwd, then split each group into date buckets.
   const groups = useMemo((): ProjectGroupData[] => {
@@ -203,8 +213,12 @@ export function SessionList({ onSessionSelect, emptyAction, filterText }: Sessio
       let latest = "";
       const byBucket = new Map<BucketKey, TreeItem[]>();
       for (const item of items) {
-        const t = item.session.start_time ?? "";
-        if (t > latest) latest = t;
+        // Bucket by start_time (session creation time) — same dimension as
+        // the within-bucket sort and the displayed "x days ago" label, so the
+        // visible order never disagrees with the bucket placement.
+        // start_time may be null; bucketFor maps null/invalid → "older".
+        const iso = item.session.start_time ?? "";
+        if (iso > latest) latest = iso;
         const bk = bucketFor(item.session.start_time, now);
         const list = byBucket.get(bk);
         if (list) list.push(item);
@@ -229,8 +243,16 @@ export function SessionList({ onSessionSelect, emptyAction, filterText }: Sessio
         totalSessions: items.length,
       });
     }
-    // Sort groups by latest session start_time, newest first.
-    groupList.sort((a, b) => b.latestStart.localeCompare(a.latestStart));
+    // Sort groups by the latest sort-field value for each group, always
+    // newest-first (fixed; independent of the within-bucket sort direction).
+    // Tie-break on the group key (cwd path) so folders with identical
+    // latestStart — common during batch imports that share one timestamp —
+    // keep a stable order instead of leaking the within-bucket sort direction.
+    groupList.sort((a, b) => {
+      const byLatest = b.latestStart.localeCompare(a.latestStart);
+      if (byLatest !== 0) return byLatest;
+      return a.key.localeCompare(b.key);
+    });
     return groupList;
   }, [tree, t, bucketLabels]);
 
