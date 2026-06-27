@@ -44,7 +44,6 @@ export function AppView() {
     selectEvent,
     selectedEventId,
     sessions,
-    loading,
     fetchSessions,
     selectedIds,
     selectionMode,
@@ -77,6 +76,12 @@ export function AppView() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState(sortOptions[0].value);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  // True while a CJK IME is composing (e.g. pinyin before the user confirms the
+  // Chinese). It is state (not a ref) so flipping it back to false on
+  // compositionend re-renders and re-runs the effect below, firing the search
+  // with the confirmed text. During composition the effect short-circuits so
+  // intermediate letters never trigger a query.
+  const [isComposing, setIsComposing] = useState(false);
 
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -119,6 +124,10 @@ export function AppView() {
   }, [handleMouseMove]);
 
   useEffect(() => {
+    // Skip search while the IME is composing — the search text is still
+    // intermediate pinyin. When composition ends, isComposing flips to false,
+    // this effect re-runs, and the search fires with the confirmed value.
+    if (isComposing) return;
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       const [sortField, sortOrder] = sort.split(":") as [string, "asc" | "desc"];
@@ -129,7 +138,7 @@ export function AppView() {
       });
     }, search ? 300 : 0);
     return () => clearTimeout(debounceRef.current);
-  }, [search, sort, fetchSessions]);
+  }, [search, sort, fetchSessions, isComposing]);
 
   // Listen for dev-mock data updates (browser mode dynamic import)
   useEffect(() => {
@@ -375,10 +384,11 @@ export function AppView() {
                 </span>
               )}
             </div>
-            {!loading && (sessions.length > 0 || search.trim()) && (
+            {(sessions.length > 0 || search.trim()) && (
               <FilterBar
                 search={search}
                 onSearchChange={setSearch}
+                onCompositionChange={setIsComposing}
                 sort={sort}
                 onSortChange={setSort}
                 sortOptions={sortOptions}

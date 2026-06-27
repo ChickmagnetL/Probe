@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 interface FilterBarProps {
   search: string;
   onSearchChange: (v: string) => void;
+  onCompositionChange?: (composing: boolean) => void;
   sort: string;
   onSortChange: (v: string) => void;
   sortOptions: { value: string; label: string }[];
@@ -12,6 +13,7 @@ interface FilterBarProps {
 export function FilterBar({
   search,
   onSearchChange,
+  onCompositionChange,
   sort,
   onSortChange,
   sortOptions,
@@ -36,7 +38,7 @@ export function FilterBar({
   }, [sortOpen]);
 
   return (
-    <div className="flex items-center gap-1 px-3 py-2">
+    <div className="flex items-center gap-1 pl-3 pr-1 h-9 -mr-3">
       {/* Search: once opened (or while a query exists), keep the input visible so
           the user can edit/clear it even when a search yields no matches. */}
       {searchOpen || search ? (
@@ -53,6 +55,15 @@ export function FilterBar({
             type="text"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
+            onCompositionStart={() => onCompositionChange?.(true)}
+            onCompositionEnd={(e) => {
+              onCompositionChange?.(false);
+              // Some WebKit builds do not fire the trailing onChange after
+              // compositionend, which would drop the confirmed text. Push the
+              // committed value explicitly; it is idempotent under React's
+              // controlled-input setState when onChange also fires.
+              onSearchChange(e.currentTarget.value);
+            }}
             onBlur={() => { if (!search) setSearchOpen(false); }}
             placeholder={t("filter.searchPlaceholder")}
             className="w-full rounded-lg border border-border bg-card pl-8 pr-2 py-1.5 text-xs
@@ -109,13 +120,6 @@ export function FilterBar({
           </div>
         )}
       </div>
-
-      {/* Active filter indicator */}
-      {search && (
-        <span className="text-[10px] text-muted-foreground ml-1 truncate max-w-[80px]">
-          {search}
-        </span>
-      )}
     </div>
   );
 }

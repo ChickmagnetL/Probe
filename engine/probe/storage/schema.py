@@ -2,7 +2,27 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+
+from .connection import probe_fts_capabilities
+
+logger = logging.getLogger(__name__)
+
+# Event kinds whose ``content`` column is indexed for full-text search.
+# Maps the PRD's semantic categories (message / reasoning / tool-call commands)
+# to the actual kind values written by the codex_adapter:
+#   - message (user/assistant): user_input, assistant_output, assistant_update
+#   - reasoning: assistant_update (streaming assistant text is the reasoning surface)
+#   - tool-call params/commands: tool_call (args live in metadata, content is
+#     NULL but harmless to include) + tool_event (carries "$ command" text)
+# tool_output is intentionally excluded — large, noisy command output/stacks.
+INDEXABLE_KINDS: frozenset[str] = frozenset(
+    {"user_input", "assistant_output", "assistant_update", "tool_call", "tool_event"}
+)
+
+# SQL fragment reused by triggers and backfill to keep the kind filter in sync.
+_KIND_FILTER = ",".join(f"'{k}'" for k in sorted(INDEXABLE_KINDS))
 
 _TABLES_SQL = [
     """CREATE TABLE IF NOT EXISTS sessions (
@@ -85,6 +105,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     _migrate_sessions_columns(conn)
     for sql in _INDEXES_SQL:
         conn.execute(sql)
+    _initialize_fts(conn)
     conn.commit()
 
 
@@ -94,3 +115,81 @@ def _migrate_sessions_columns(conn: sqlite3.Connection) -> None:
     for column, alter_sql in _SESSION_COLUMN_ADDITIONS.items():
         if column not in existing:
             conn.execute(alter_sql)
+
+
+def _initialize_fts(conn: sqlite3.Connection) -> None:
+    """Create the events_fts external-content table, sync triggers, and backfill.
+
+    Skipped entirely when the SQLite build lacks FTS5 or the trigram tokenizer;
+    in that case search falls back to LIKE-only (see session_dao.list_sessions).
+    """
+    fts5_ok, trigram_ok = probe_fts_capabilities(conn)
+    if not (fts5_ok and trigram_ok):
+        return
+
+    conn.execute(
+        """CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+            content,
+            content_rowid='rowid',
+            tokenize='trigram'
+        )"""
+    )
+    _create_fts_triggers(conn)
+    _backfill_fts(conn)
+
+
+def _create_fts_triggers(conn: sqlite3.Connection) -> None:
+    """Triggers keeping events_fts in sync with events, kind-filtered.
+
+    External-content mode stores only tokens in events_fts; the original text
+    stays in events.content. Each trigger fires on events row changes and only
+    touches events_fts when the row's kind is indexable.
+    """
+    conn.executescript(
+        f"""
+        CREATE TRIGGER IF NOT EXISTS events_fts_ai AFTER INSERT ON events BEGIN
+            INSERT INTO events_fts(rowid, content)
+            SELECT new.rowid, new.content
+            WHERE new.kind IN ({_KIND_FILTER})
+                AND new.content IS NOT NULL AND new.content != '';
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS events_fts_ad AFTER DELETE ON events BEGIN
+            DELETE FROM events_fts WHERE rowid = old.rowid;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS events_fts_au AFTER UPDATE ON events BEGIN
+            DELETE FROM events_fts WHERE rowid = old.rowid;
+            INSERT INTO events_fts(rowid, content)
+            SELECT new.rowid, new.content
+            WHERE new.kind IN ({_KIND_FILTER})
+                AND new.content IS NOT NULL AND new.content != '';
+        END;
+        """
+    )
+
+
+def _backfill_fts(conn: sqlite3.Connection) -> None:
+    """Populate events_fts from existing events on first upgrade.
+
+    Runs once: when events has rows but events_fts is empty. On a fresh DB
+    (no events) the trigger handles all future inserts, so the backfill is a
+    no-op. The kind filter mirrors the INSERT trigger so non-indexable kinds
+    (notably tool_output) never enter the index.
+    """
+    fts_count = conn.execute("SELECT COUNT(*) FROM events_fts").fetchone()[0]
+    if fts_count > 0:
+        return
+    events_count = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    if events_count == 0:
+        return
+
+    cursor = conn.execute(
+        f"""INSERT INTO events_fts(rowid, content)
+            SELECT rowid, content FROM events
+            WHERE kind IN ({_KIND_FILTER})
+              AND content IS NOT NULL AND content != ''"""
+    )
+    logger.info(
+        "backfilled events_fts with %d rows for content search", cursor.rowcount
+    )
