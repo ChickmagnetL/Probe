@@ -349,7 +349,7 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
 
   if (cmd === "app_info") {
     const appInfo: AppInfo = {
-      version: "0.0.4",
+      version: "0.0.5",
       name: "probe",
     };
     return appInfo as T;
