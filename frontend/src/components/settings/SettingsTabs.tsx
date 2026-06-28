@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
-export type SettingsTab = "general" | "interface";
+export type SettingsTab = "general" | "interface" | "update";
 
 interface SettingsTabsProps {
   active: SettingsTab;
   onChange: (tab: SettingsTab) => void;
 }
 
-const TABS: SettingsTab[] = ["general", "interface"];
+const TABS: SettingsTab[] = ["general", "interface", "update"];
 
 export function SettingsTabs({ active, onChange }: SettingsTabsProps) {
   const { t } = useTranslation();
@@ -40,7 +40,11 @@ export function SettingsTabs({ active, onChange }: SettingsTabsProps) {
   }, [updateIndicator, t]);
 
   const label = (tab: SettingsTab) =>
-    tab === "general" ? t("settings.general") : t("settings.interface");
+    tab === "general"
+      ? t("settings.general")
+      : tab === "interface"
+        ? t("settings.interface")
+        : t("settings.update");
 
   return (
     <div className="liquid-glass rounded-full p-0.5 flex items-center relative inline-flex">

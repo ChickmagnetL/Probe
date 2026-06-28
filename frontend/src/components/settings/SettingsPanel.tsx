@@ -5,6 +5,7 @@ import { invoke } from "../../ipc/invoke";
 import { useSettingsStore } from "../../stores/settings";
 import { useImportProgressStore } from "../../stores/import_progress";
 import { SettingsTabs, type SettingsTab } from "./SettingsTabs";
+import { UpdateTab } from "./UpdateTab";
 
 interface SettingsPanelProps {
   open: boolean;
@@ -121,6 +122,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const pathDirty = path.trim() !== (settings.codex_path ?? "");
   const langDirty = lang !== (settings.interface_language || currentLang || "");
   const dirty = pathDirty || langDirty;
+  const showSettingsActions = activeTab !== "update";
 
   return (
     <div
@@ -129,7 +131,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         if (e.target === e.currentTarget) handleClose();
       }}
     >
-      <div className="relative w-full max-w-lg mx-4 bg-card rounded-lg border border-border shadow-xl animate-scale-in">
+      <div className={`relative w-full mx-4 bg-card rounded-lg border border-border shadow-xl animate-scale-in ${activeTab === "update" ? "max-w-3xl" : "max-w-lg"}`}>
         <button
           onClick={handleClose}
           className="absolute top-3 right-3 btn-ghost p-1.5 z-10 hover:scale-112 active:scale-90 transition-transform duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
@@ -148,7 +150,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
             <SettingsTabs active={activeTab} onChange={setActiveTab} />
           </div>
 
-          <div className="flex flex-col min-h-[180px]">
+          <div className={`flex flex-col ${activeTab === "update" ? "min-h-[320px]" : "min-h-[180px]"}`}>
             <div className="flex-1">
               {activeTab === "general" && (
                 <>
@@ -231,9 +233,13 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                   </div>
                 </div>
               )}
+
+              {activeTab === "update" && (
+                <UpdateTab active={activeTab === "update"} />
+              )}
             </div>
 
-            {error && (
+            {showSettingsActions && error && (
               <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-start gap-2">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 shrink-0 mt-0.5">
                   <circle cx="12" cy="12" r="10" />
@@ -247,23 +253,25 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            <div className="flex justify-end gap-3 mt-4">
-              <button
-                onClick={handleClose}
-                className="btn-ghost px-4 py-2"
-                type="button"
-              >
-                {t("confirm.cancel")}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={loading || saving || !dirty}
-                className="btn-primary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                type="button"
-              >
-                {saving ? t("settings.saving") : t("settings.save")}
-              </button>
-            </div>
+            {showSettingsActions && (
+              <div className="flex justify-end gap-3 mt-4">
+                <button
+                  onClick={handleClose}
+                  className="btn-ghost px-4 py-2"
+                  type="button"
+                >
+                  {t("confirm.cancel")}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={loading || saving || !dirty}
+                  className="btn-primary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                >
+                  {saving ? t("settings.saving") : t("settings.save")}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

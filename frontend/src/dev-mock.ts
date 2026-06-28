@@ -5,6 +5,7 @@
 import type { JSONDict } from "./lib/parser/models";
 import { processFiles } from "./lib/parser/index";
 import type {
+  AppInfo,
   ImportResult,
   SessionRow,
   SessionDetail,
@@ -344,6 +345,14 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
       throw new Error("No source file available for this session");
     }
     return allFiles[allFiles.length - 1] as T;
+  }
+
+  if (cmd === "app_info") {
+    const appInfo: AppInfo = {
+      version: "0.0.4",
+      name: "probe",
+    };
+    return appInfo as T;
   }
 
   throw new Error(`Unknown IPC command: ${cmd}`);

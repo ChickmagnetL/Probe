@@ -1,4 +1,5 @@
 import type {
+  AppInfo,
   EventRow,
   ImportBatchResult,
   ImportResult,
@@ -7,11 +8,16 @@ import type {
   ScanResult,
   SessionDetail,
   Settings,
+  UpdateInfo,
 } from "./types";
+import type { DownloadEvent, Update } from "@tauri-apps/plugin-updater";
 
 type InvokeFn = <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+type UpdateCheckToken = number;
 
 let _invoke: InvokeFn | null = null;
+let _pendingUpdate: Update | null = null;
+let _activeUpdateCheckToken: UpdateCheckToken | null = null;
 
 async function getInvoke(): Promise<InvokeFn> {
   if (_invoke) return _invoke;
@@ -24,6 +30,51 @@ async function getInvoke(): Promise<InvokeFn> {
     _invoke = mockInvoke;
   }
   return _invoke;
+}
+
+function nativeError(message: string): { kind: "Native"; data: string } {
+  return { kind: "Native", data: message };
+}
+
+async function replacePendingUpdate(next: Update | null): Promise<void> {
+  if (_pendingUpdate) {
+    try {
+      await _pendingUpdate.close();
+    } catch {
+      // Ignore resource cleanup errors when replacing the pending update handle.
+    }
+  }
+  _pendingUpdate = next;
+}
+
+async function requirePendingUpdate(): Promise<Update> {
+  if (!_pendingUpdate) {
+    throw nativeError("No pending update. Check for updates again.");
+  }
+  return _pendingUpdate;
+}
+
+function updateToInfo(update: Update): UpdateInfo {
+  return {
+    current_version: update.currentVersion,
+    version: update.version,
+    notes: update.body ?? null,
+    pub_date: update.date ?? null,
+  };
+}
+
+async function getUpdaterPlugin(): Promise<typeof import("@tauri-apps/plugin-updater")> {
+  if (!window.__TAURI_INTERNALS__) {
+    throw nativeError("Updater is only available in the desktop app.");
+  }
+  return import("@tauri-apps/plugin-updater");
+}
+
+async function getProcessPlugin(): Promise<typeof import("@tauri-apps/plugin-process")> {
+  if (!window.__TAURI_INTERNALS__) {
+    throw nativeError("Process control is only available in the desktop app.");
+  }
+  return import("@tauri-apps/plugin-process");
 }
 
 export const invoke = {
@@ -127,5 +178,61 @@ export const invoke = {
   async readRawFile(sessionId: string): Promise<string> {
     const fn = await getInvoke();
     return fn<string>("read_raw_file", { sessionId });
+  },
+
+  async appInfo(): Promise<AppInfo> {
+    const fn = await getInvoke();
+    return fn<AppInfo>("app_info");
+  },
+
+  async beginUpdateCheck(checkToken: UpdateCheckToken): Promise<void> {
+    _activeUpdateCheckToken = checkToken;
+    await replacePendingUpdate(null);
+  },
+
+  async checkForUpdate(checkToken: UpdateCheckToken): Promise<UpdateInfo | null> {
+    const { check } = await getUpdaterPlugin();
+    const update = await check();
+    if (_activeUpdateCheckToken !== checkToken) {
+      if (update) {
+        try {
+          await update.close();
+        } catch {
+          // Ignore stale update handle cleanup errors.
+        }
+      }
+      return update ? updateToInfo(update) : null;
+    }
+    await replacePendingUpdate(update);
+    return update ? updateToInfo(update) : null;
+  },
+
+  async downloadAndInstallUpdate(onEvent?: (event: DownloadEvent) => void): Promise<void> {
+    const update = await requirePendingUpdate();
+    _pendingUpdate = null;
+    try {
+      await update.downloadAndInstall(onEvent);
+    } finally {
+      try {
+        await update.close();
+      } catch {
+        // Ignore resource cleanup errors after the updater finishes or fails.
+      }
+    }
+  },
+
+  async clearPendingUpdate(checkToken?: UpdateCheckToken): Promise<void> {
+    if (checkToken !== undefined) {
+      if (_activeUpdateCheckToken !== checkToken) {
+        return;
+      }
+      _activeUpdateCheckToken = null;
+    }
+    await replacePendingUpdate(null);
+  },
+
+  async relaunchApp(): Promise<void> {
+    const { relaunch } = await getProcessPlugin();
+    await relaunch();
   },
 };

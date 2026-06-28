@@ -1,6 +1,5 @@
 {
   "productName": "Probe",
-  "version": "0.0.3",
   "identifier": "com.probe.desktop",
   "build": {
     "frontendDist": "../frontend/dist",
@@ -30,7 +29,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "nsis"],
+    "createUpdaterArtifacts": true,
+    "targets": ["app", "dmg", "nsis"],
     "icon": [
       "icons/icon.png"
     ],
@@ -40,6 +40,17 @@
     "macOS": {
       "minimumSystemVersion": "11.0",
       "entitlements": null
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZCNjFCQzYwM0NDRjg2NzAKUldSd2hzODhZTHhoYTVWb2dWQitiUUlqaG1pYzMxbVdsUU9BeG5RMU9JZ21seG5Ya09DOWw0c28K",
+      "endpoints": [
+        "https://github.com/ChickmagnetL/Probe/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

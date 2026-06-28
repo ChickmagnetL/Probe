@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { toIpcError } from "../ipc/errors";
 import { invoke } from "../ipc/invoke";
 import { useSessionStore } from "./session";
 import type { IpcError } from "../ipc/types";
@@ -19,22 +20,6 @@ interface ImportProgressState {
 
   runIncrementalImport: (codexPath: string) => Promise<void>;
   reset: () => void;
-}
-
-function toIpcError(raw: unknown): IpcError {
-  if (typeof raw === "object" && raw !== null && "kind" in raw) {
-    const r = raw as { kind: string; data: unknown };
-    if (r.kind === "Engine" && typeof r.data === "object" && r.data !== null) {
-      const d = r.data as { code: string; message: string };
-      return { code: d.code, message: d.message };
-    }
-    return {
-      code: r.kind.toUpperCase(),
-      message: typeof r.data === "string" ? r.data : JSON.stringify(r.data),
-    };
-  }
-  if (raw instanceof Error) return { code: "INTERNAL_ERROR", message: raw.message };
-  return { code: "INTERNAL_ERROR", message: String(raw) };
 }
 
 export const useImportProgressStore = create<ImportProgressState>((set, get) => ({

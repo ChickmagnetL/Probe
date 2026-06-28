@@ -3,6 +3,26 @@ export interface IpcError {
   message: string;
 }
 
+export interface AppInfo {
+  version: string;
+  name: string;
+}
+
+export interface UpdateInfo {
+  current_version: string;
+  version: string;
+  notes: string | null;
+  pub_date: string | null;
+}
+
+export type UpdateStatus =
+  | "checking"
+  | "up-to-date"
+  | "update-available"
+  | "downloading"
+  | "ready-to-restart"
+  | "error";
+
 // ── Import ──────────────────────────────────────────────
 
 export interface ImportResult {

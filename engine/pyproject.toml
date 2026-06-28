@@ -1,6 +1,6 @@
 [project]
 name = "probe-engine"
-version = "0.1.0"
+version = "0.0.4"
 description = "Probe Python engine — sidecar IPC server"
 requires-python = ">=3.10"
 
