@@ -122,7 +122,6 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const pathDirty = path.trim() !== (settings.codex_path ?? "");
   const langDirty = lang !== (settings.interface_language || currentLang || "");
   const dirty = pathDirty || langDirty;
-  const showSettingsActions = activeTab !== "update";
 
   return (
     <div
@@ -131,7 +130,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         if (e.target === e.currentTarget) handleClose();
       }}
     >
-      <div className={`relative w-full mx-4 bg-card rounded-lg border border-border shadow-xl animate-scale-in ${activeTab === "update" ? "max-w-3xl" : "max-w-lg"}`}>
+      <div className="relative w-full max-w-[600px] min-h-[520px] mx-4 bg-card rounded-lg border border-border shadow-xl animate-scale-in flex flex-col">
         <button
           onClick={handleClose}
           className="absolute top-3 right-3 btn-ghost p-1.5 z-10 hover:scale-112 active:scale-90 transition-transform duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
@@ -143,30 +142,30 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
           </svg>
         </button>
 
-        <div className="p-8">
+        <div className="p-8 flex flex-col flex-1">
           <h2 className="text-xl font-semibold text-foreground mb-1">{t("settings.title")}</h2>
 
           <div className="mb-6">
             <SettingsTabs active={activeTab} onChange={setActiveTab} />
           </div>
 
-          <div className={`flex flex-col ${activeTab === "update" ? "min-h-[320px]" : "min-h-[180px]"}`}>
+          <div className="flex flex-col flex-1 min-h-[300px]">
             <div className="flex-1">
               {activeTab === "general" && (
                 <>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {t("settings.subtitle")}
-                  </p>
+                  <div className="mb-2">
+                    <p id="settings-general-title" className="text-sm font-medium text-foreground">
+                      {t("settings.codexPath")}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t("settings.subtitle")}
+                    </p>
+                  </div>
 
-                  <label
-                    htmlFor="codex-path-input"
-                    className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2"
-                  >
-                    {t("settings.codexPath")}
-                  </label>
-                  <div className="flex gap-2 mb-2">
+                  <div className="flex gap-2 mt-4">
                     <input
                       id="codex-path-input"
+                      aria-labelledby="settings-general-title"
                       type="text"
                       value={path}
                       onChange={(e) => setPath(e.target.value)}
@@ -186,7 +185,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                     </button>
                   </div>
                   {defaultHint && (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground mt-2">
                       {t("settings.default")} <span className="font-mono">{defaultHint}</span>
                     </p>
                   )}
@@ -194,13 +193,19 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               )}
 
               {activeTab === "interface" && (
-                <div>
-                  <label className="block text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2">
-                    {t("settings.language")}
-                  </label>
-                  <div ref={langRef} className="relative">
+                <>
+                  <div className="mb-2">
+                    <p id="settings-interface-title" className="text-sm font-medium text-foreground">
+                      {t("settings.language")}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t("settings.languageHint")}
+                    </p>
+                  </div>
+                  <div ref={langRef} className="relative mt-4">
                     <button
                       type="button"
+                      aria-labelledby="settings-interface-title"
                       onClick={() => setLangOpen((v) => !v)}
                       className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-ring/40"
                     >
@@ -231,7 +236,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                       </div>
                     )}
                   </div>
-                </div>
+                </>
               )}
 
               {activeTab === "update" && (
@@ -239,7 +244,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               )}
             </div>
 
-            {showSettingsActions && error && (
+            {activeTab !== "update" && error && (
               <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-start gap-2">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 shrink-0 mt-0.5">
                   <circle cx="12" cy="12" r="10" />
@@ -253,25 +258,35 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               </div>
             )}
 
-            {showSettingsActions && (
-              <div className="flex justify-end gap-3 mt-4">
+            <div className="flex justify-end gap-3 mt-auto pt-6 border-t border-border">
+              {activeTab === "update" ? (
                 <button
                   onClick={handleClose}
-                  className="btn-ghost px-4 py-2"
+                  className="btn-primary px-4 py-2"
                   type="button"
                 >
-                  {t("confirm.cancel")}
+                  {t("settings.close")}
                 </button>
-                <button
-                  onClick={handleSave}
-                  disabled={loading || saving || !dirty}
-                  className="btn-primary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  type="button"
-                >
-                  {saving ? t("settings.saving") : t("settings.save")}
-                </button>
-              </div>
-            )}
+              ) : (
+                <>
+                  <button
+                    onClick={handleClose}
+                    className="btn-ghost px-4 py-2"
+                    type="button"
+                  >
+                    {t("confirm.cancel")}
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={loading || saving || !dirty}
+                    className="btn-primary px-4 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                  >
+                    {saving ? t("settings.saving") : t("settings.save")}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

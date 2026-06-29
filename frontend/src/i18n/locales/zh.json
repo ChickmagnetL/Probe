@@ -161,6 +161,7 @@
     "interface": "界面",
     "update": "更新",
     "language": "语言",
+    "languageHint": "切换后界面会立即重新加载。",
     "browse": "浏览"
   },
   "updates": {
@@ -170,9 +171,6 @@
     "checking": "正在检查更新...",
     "checkingDetail": "Probe 正在访问配置好的更新源。",
     "currentVersion": "当前版本",
-    "latestVersion": "最新版本",
-    "newVersion": "新版本",
-    "releaseDate": "发布时间",
     "releaseNotes": "更新日志",
     "noReleaseNotes": "此版本没有发布更新日志。",
     "unknownVersion": "未知",

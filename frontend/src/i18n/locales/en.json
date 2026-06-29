@@ -161,6 +161,7 @@
     "interface": "Interface",
     "update": "Update",
     "language": "Language",
+    "languageHint": "The interface will reload immediately after switching.",
     "browse": "Browse"
   },
   "updates": {
@@ -170,9 +171,6 @@
     "checking": "Checking for updates...",
     "checkingDetail": "Probe is contacting the configured updater endpoint.",
     "currentVersion": "Current version",
-    "latestVersion": "Latest version",
-    "newVersion": "New version",
-    "releaseDate": "Published",
     "releaseNotes": "Release notes",
     "noReleaseNotes": "No release notes were published for this release.",
     "unknownVersion": "Unknown",

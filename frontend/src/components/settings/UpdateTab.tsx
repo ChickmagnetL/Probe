@@ -30,7 +30,7 @@ function delay(ms: number): Promise<void> {
 }
 
 export function UpdateTab({ active }: UpdateTabProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [status, setStatus] = useState<UpdateStatus>("checking");
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -199,17 +199,6 @@ export function UpdateTab({ active }: UpdateTabProps) {
     }
   }, []);
 
-  const publishedDate = useMemo(() => {
-    if (!updateInfo?.pub_date) return null;
-    const date = new Date(updateInfo.pub_date);
-    if (Number.isNaN(date.getTime())) return updateInfo.pub_date;
-    return new Intl.DateTimeFormat(i18n.language === "zh" ? "zh-CN" : "en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }).format(date);
-  }, [i18n.language, updateInfo?.pub_date]);
-
   const downloadPercent = useMemo(() => {
     if (!progress.total || progress.total <= 0) return null;
     return Math.min(100, Math.round((progress.downloaded / progress.total) * 100));
@@ -238,12 +227,13 @@ export function UpdateTab({ active }: UpdateTabProps) {
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <InfoCard label={t("updates.currentVersion")} value={currentVersion} />
-        <InfoCard
-          label={t("updates.latestVersion")}
-          value={updateInfo?.version ?? currentVersion}
-        />
+      <div className="flex items-center justify-between border-t border-border py-3">
+        <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+          {t("updates.currentVersion")}
+        </span>
+        <span className="text-sm font-semibold font-mono text-foreground">
+          {currentVersion}
+        </span>
       </div>
 
       {status === "checking" && (
@@ -279,46 +269,62 @@ export function UpdateTab({ active }: UpdateTabProps) {
       )}
 
       {status === "update-available" && updateInfo && (
-        <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-foreground">
-                {t("updates.available", { version: updateInfo.version })}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("updates.availableDetail", {
-                  currentVersion: updateInfo.current_version,
-                  version: updateInfo.version,
-                })}
-              </p>
+        <>
+          <div className="rounded-lg border border-border bg-card p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-primary shrink-0"
+                >
+                  <path d="M12 5v14M5 12l7 7 7-7" />
+                </svg>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground truncate">
+                    {t("updates.available", { version: updateInfo.version })}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t("updates.availableDetail", {
+                      currentVersion: updateInfo.current_version,
+                      version: updateInfo.version,
+                    })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleDownloadAndInstall()}
+                className="btn-primary shrink-0 px-3 py-1.5 text-xs"
+              >
+                {t("updates.downloadAndInstall")}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleDownloadAndInstall()}
-              className="btn-primary shrink-0 px-4 py-2"
-            >
-              {t("updates.downloadAndInstall")}
-            </button>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <InfoCard label={t("updates.newVersion")} value={updateInfo.version} />
-            <InfoCard label={t("updates.releaseDate")} value={publishedDate ?? t("updates.unknownVersion")} />
           </div>
 
           <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            <p className="mb-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
               {t("updates.releaseNotes")}
             </p>
             {updateInfo.notes ? (
-              <MarkdownContent content={updateInfo.notes} className="max-h-[280px] bg-background" />
+              <MarkdownContent
+                content={updateInfo.notes}
+                className="bg-background"
+                style={{ maxHeight: 130 }}
+              />
             ) : (
               <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
                 {t("updates.noReleaseNotes")}
               </div>
             )}
           </div>
-        </div>
+        </>
       )}
 
       {status === "downloading" && (
@@ -389,24 +395,6 @@ export function UpdateTab({ active }: UpdateTabProps) {
         </div>
       )}
     </section>
-  );
-}
-
-interface InfoCardProps {
-  label: string;
-  value: string;
-}
-
-function InfoCard({ label, value }: InfoCardProps) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 text-sm font-semibold text-foreground break-all">
-        {value}
-      </p>
-    </div>
   );
 }
 
