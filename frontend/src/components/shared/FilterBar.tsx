@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import type { ReactNode } from "react";
 
 interface FilterBarProps {
   search: string;
@@ -8,6 +9,9 @@ interface FilterBarProps {
   sort: string;
   onSortChange: (v: string) => void;
   sortOptions: { value: string; label: string }[];
+  /** Extra buttons (import/delete) rendered to the left of the search button.
+      Hidden while the search input is expanded so the input can take their place. */
+  children?: ReactNode;
 }
 
 export function FilterBar({
@@ -17,12 +21,17 @@ export function FilterBar({
   sort,
   onSortChange,
   sortOptions,
+  children,
 }: FilterBarProps) {
   const { t } = useTranslation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const sortRef = useRef<HTMLDivElement>(null);
+
+  // Search is "active" when toggled open OR while a query remains, so the
+  // user can keep editing/clearing even when a search yields no matches.
+  const searchActive = searchOpen || !!search;
 
   useEffect(() => {
     if (searchOpen) inputRef.current?.focus();
@@ -37,12 +46,23 @@ export function FilterBar({
     return () => document.removeEventListener("mousedown", close);
   }, [sortOpen]);
 
+  const toggleSearch = () => {
+    if (searchOpen) {
+      // Closing: clear the query and collapse the input so children return.
+      setSearchOpen(false);
+      onSearchChange("");
+    } else {
+      setSearchOpen(true);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-1 pl-3 pr-1 h-9 -mr-3">
-      {/* Search: once opened (or while a query exists), keep the input visible so
-          the user can edit/clear it even when a search yields no matches. */}
-      {searchOpen || search ? (
-        <div className="relative flex-1">
+    <div className="flex items-center gap-1 min-w-0 flex-1 justify-end pr-1 -mr-3">
+      {/* Flex zone: shows EITHER the input (when search active) OR the
+          children (import/delete). The input expands over the children's
+          position; the always-present search button toggles between them. */}
+      {searchActive ? (
+        <div className="relative flex-1 min-w-0">
           <svg
             className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none"
             viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -64,7 +84,12 @@ export function FilterBar({
               // controlled-input setState when onChange also fires.
               onSearchChange(e.currentTarget.value);
             }}
-            onBlur={() => { if (!search) setSearchOpen(false); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setSearchOpen(false);
+                onSearchChange("");
+              }
+            }}
             placeholder={t("filter.searchPlaceholder")}
             className="w-full rounded-lg border border-border bg-card pl-8 pr-2 py-1.5 text-xs
                        placeholder:text-muted-foreground text-foreground
@@ -73,18 +98,21 @@ export function FilterBar({
           />
         </div>
       ) : (
-        <button
-          onClick={() => setSearchOpen(true)}
-          className="btn-ghost p-1.5"
-          aria-label={t("filter.searchSessions")}
-          type="button"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.35-4.35" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1 min-w-0">{children}</div>
       )}
+
+      {/* Search toggle button - always visible. Shows the "on" style while active. */}
+      <button
+        onClick={toggleSearch}
+        className={`btn-ghost p-1.5 ${searchActive ? "bg-muted text-foreground" : ""}`}
+        aria-label={t("filter.searchSessions")}
+        type="button"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+      </button>
 
       {/* Sort */}
       <div className="relative" ref={sortRef}>
