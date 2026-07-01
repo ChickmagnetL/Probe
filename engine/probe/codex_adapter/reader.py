@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Iterator
 
+from probe.path_utils import path_from_user_input
+
 from .models import JSONDict, ParsedLine
 
 
@@ -17,7 +19,7 @@ def discover_rollout_files(input_path: str | Path | list[str | Path]) -> list[Pa
     if isinstance(input_path, list):
         files: list[Path] = []
         for entry in input_path:
-            p = Path(entry).expanduser()
+            p = path_from_user_input(str(entry))
             if not is_rollout_file(p):
                 raise ValueError(f"unsupported input file: {p}")
             files.append(p.resolve())
@@ -32,7 +34,7 @@ def discover_rollout_files(input_path: str | Path | list[str | Path]) -> list[Pa
                 ordered.append(f)
         return ordered
 
-    path = Path(input_path).expanduser()
+    path = path_from_user_input(str(input_path))
     if path.is_file():
         if not is_rollout_file(path):
             raise ValueError(f"unsupported input file: {path}")

@@ -28,6 +28,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [saving, setSaving] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const langRef = useRef<HTMLDivElement>(null);
+  const effectivePath = settings.codex_path ?? settings.default_codex_path ?? "";
 
   // Load settings when the panel opens.
   useEffect(() => {
@@ -37,12 +38,12 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reactive prefill: when settings finish loading and the local input is
-  // still empty, sync the persisted codex_path into the input.
+  // still empty, sync the configured path or platform default into the input.
   useEffect(() => {
-    if (open && !path && settings.codex_path) {
-      setPath(settings.codex_path);
+    if (open && !path && effectivePath) {
+      setPath(effectivePath);
     }
-  }, [open, settings.codex_path, path]);
+  }, [open, effectivePath, path]);
 
   // Reactive prefill: when settings finish loading and the local draft is
   // still empty, sync interface_language (i18n fallback) into the draft.
@@ -95,17 +96,23 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     }
   }, []);
 
+  const defaultHint = settings.default_codex_path;
+  const currentLang = i18n.language;
+  const pathDirty = path.trim() !== effectivePath.trim();
+  const langDirty = lang !== (settings.interface_language || currentLang || "");
+  const dirty = pathDirty || langDirty;
+
   const handleSave = useCallback(async () => {
     const trimmed = path.trim();
     const langValue = lang.trim();
     if (!trimmed && !langValue) return;
     setSaving(true);
     try {
-      if (trimmed) {
+      if (pathDirty && trimmed) {
         await setCodexPath(trimmed);
         void runIncrementalImport(trimmed);
       }
-      if (langValue) {
+      if (langDirty && langValue) {
         await setInterfaceLanguage(langValue);
         await i18n.changeLanguage(langValue);
       }
@@ -113,15 +120,18 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     } finally {
       setSaving(false);
     }
-  }, [path, lang, setCodexPath, setInterfaceLanguage, runIncrementalImport, onClose]);
+  }, [
+    path,
+    lang,
+    pathDirty,
+    langDirty,
+    setCodexPath,
+    setInterfaceLanguage,
+    runIncrementalImport,
+    onClose,
+  ]);
 
   if (!open) return null;
-
-  const defaultHint = settings.default_codex_path;
-  const currentLang = i18n.language;
-  const pathDirty = path.trim() !== (settings.codex_path ?? "");
-  const langDirty = lang !== (settings.interface_language || currentLang || "");
-  const dirty = pathDirty || langDirty;
 
   return (
     <div
@@ -169,7 +179,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                       type="text"
                       value={path}
                       onChange={(e) => setPath(e.target.value)}
-                      placeholder="~/.codex"
+                      placeholder={defaultHint ?? "~/.codex"}
                       spellCheck={false}
                       className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
                     />

@@ -58,7 +58,9 @@ export function AppView() {
   // Settings + incremental import
   const settingsInitialized = useSettingsStore((s) => s.initialized);
   const settingsLoad = useSettingsStore((s) => s.load);
-  const codexPath = useSettingsStore((s) => s.settings.codex_path);
+  const effectiveCodexPath = useSettingsStore(
+    (s) => s.settings.codex_path ?? s.settings.default_codex_path,
+  );
   const runIncrementalImport = useImportProgressStore((s) => s.runIncrementalImport);
   const importActive = useImportProgressStore((s) => s.active);
   const importTotal = useImportProgressStore((s) => s.total);
@@ -155,11 +157,11 @@ export function AppView() {
       return;
     }
     if (autoScanStartedRef.current) return;
-    if (codexPath) {
+    if (effectiveCodexPath) {
       autoScanStartedRef.current = true;
-      void runIncrementalImport(codexPath);
+      void runIncrementalImport(effectiveCodexPath);
     }
-  }, [settingsInitialized, codexPath, settingsLoad, runIncrementalImport]);
+  }, [settingsInitialized, effectiveCodexPath, settingsLoad, runIncrementalImport]);
 
   const sortedEvents = useMemo(() => {
     if (!detail?.events) return [];

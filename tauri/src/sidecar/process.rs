@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio::process::{Child, Command};
@@ -142,7 +142,7 @@ impl SidecarManager {
         } else {
             // Dev mode: run the current source tree instead of any stale
             // engine/dist/probe-engine artifact left from PyInstaller builds.
-            let python = find_python();
+            let python = find_python(&engine);
             let server_py = engine.join("server.py");
             let dev_dist = engine.join("dist/probe-engine");
 
@@ -231,10 +231,15 @@ impl SidecarManager {
     }
 }
 
-fn find_python() -> String {
+fn find_python(engine_dir: &Path) -> String {
     if let Ok(custom) = std::env::var("TAURI_PYTHON_PATH") {
         return custom;
     }
+
+    if let Some(venv_python) = local_venv_python(engine_dir) {
+        return venv_python;
+    }
+
     for name in ["python3", "python"] {
         if std::process::Command::new(name)
             .arg("--version")
@@ -245,4 +250,18 @@ fn find_python() -> String {
         }
     }
     "python3".to_string()
+}
+
+fn local_venv_python(engine_dir: &Path) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    let candidate = engine_dir.join(".venv").join("Scripts").join("python.exe");
+
+    #[cfg(not(target_os = "windows"))]
+    let candidate = engine_dir.join(".venv").join("bin").join("python");
+
+    if candidate.is_file() {
+        return Some(candidate.to_string_lossy().into_owned());
+    }
+
+    None
 }

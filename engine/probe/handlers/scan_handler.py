@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from probe.codex_adapter.reader import is_rollout_file
+from probe.path_utils import path_from_user_input
 from probe.storage import get_connection
 from probe.storage import imported_files_dao
 
@@ -73,7 +74,7 @@ def _resolve_sessions_dir(path_value: str) -> Path:
 
     Existence is not checked here; the caller validates.
     """
-    expanded = Path(path_value).expanduser()
+    expanded = path_from_user_input(path_value)
     if expanded.name == "sessions":
         return expanded
     sessions_subdir = expanded / "sessions"
