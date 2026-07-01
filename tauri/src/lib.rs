@@ -24,6 +24,13 @@ pub fn run() {
                 #[cfg(windows)]
                 {
                     let _ = window.set_decorations(false);
+                    // Lighten the frameless window edge: set the native window
+                    // background to match the frontend --color-background (#F8FAFC)
+                    // so the thin border no longer reads as dark. Windows-only;
+                    // macOS returns "not implemented" for set_background_color.
+                    let _ = window.set_background_color(Some(tauri::webview::Color(
+                        0xF8, 0xFA, 0xFC, 255,
+                    )));
                 }
                 // Delay focus to ensure window is fully initialized on macOS
                 let window_clone = window.clone();

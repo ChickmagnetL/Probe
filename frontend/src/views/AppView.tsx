@@ -18,6 +18,7 @@ import { eventTypeLabel } from "../components/graph/graph-labels";
 import { SkeletonLines } from "../components/shared/SkeletonLines";
 import { ErrorBoundary } from "../components/shared/ErrorBoundary";
 import { TitleDragRegion } from "../components/shared/TitleBar";
+import { WindowControls } from "../components/shared/WindowControls";
 import { FilterBar } from "../components/shared/FilterBar";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog";
 import { SettingsPanel } from "../components/settings/SettingsPanel";
@@ -355,6 +356,8 @@ export function AppView() {
               <line x1="9" y1="14" x2="15" y2="14" />
             </svg>
           </button>
+          <div className="w-px h-5 bg-border mx-1" />
+          <WindowControls />
         </div>
 
         {/* Sessions section */}
