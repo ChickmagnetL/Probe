@@ -88,10 +88,9 @@ export function WindowControls() {
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M14 4h6v6" />
-            <path d="M10 20H4v-6" />
-            <path d="M20 4l-7 7" />
-            <path d="M4 20l7-7" />
+            {/* Windows-standard "restore" glyph: two overlapping squares */}
+            <rect x="3" y="8" width="13" height="13" rx="2" />
+            <path d="M8 8V5a2 2 0 012-2h9a2 2 0 012 2v9a2 2 0 01-2 2h-3" />
           </svg>
         ) : (
           <svg
