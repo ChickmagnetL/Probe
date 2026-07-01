@@ -21,6 +21,10 @@ pub fn run() {
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
 
             if let Some(window) = app.get_webview_window("main") {
+                #[cfg(windows)]
+                {
+                    let _ = window.set_decorations(false);
+                }
                 // Delay focus to ensure window is fully initialized on macOS
                 let window_clone = window.clone();
                 std::thread::spawn(move || {
