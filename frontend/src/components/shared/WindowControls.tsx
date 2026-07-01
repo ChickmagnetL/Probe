@@ -51,6 +51,7 @@ export function WindowControls() {
 
   return (
     <div className="flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="w-px h-5 bg-border mx-1" />
       <button
         type="button"
         onClick={handleMinimize}

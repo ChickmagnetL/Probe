@@ -356,7 +356,6 @@ export function AppView() {
               <line x1="9" y1="14" x2="15" y2="14" />
             </svg>
           </button>
-          <div className="w-px h-5 bg-border mx-1" />
           <WindowControls />
         </div>
 
