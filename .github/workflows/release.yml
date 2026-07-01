@@ -100,10 +100,12 @@ jobs:
           workspaces: tauri
 
       - name: Install frontend dependencies
-        run: cd frontend && npm install
+        run: cd frontend && npm ci
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2"
+      - name: Install Tauri CLI (prebuilt via cargo-binstall)
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall -y --no-confirm tauri-cli
 
       - name: Verify updater signing key
         shell: bash
