@@ -165,8 +165,11 @@ jobs:
           rm -rf artifacts/release-assets
           mkdir -p artifacts/release-assets
           copied_any=false
+          VERSION="${GITHUB_REF_NAME#v}"
           while IFS= read -r file; do
-            cp "$file" "artifacts/release-assets/$(basename "$file")"
+            base="$(basename "$file")"
+            new_base="${base/_${VERSION}_/_}"
+            cp "$file" "artifacts/release-assets/$new_base"
             copied_any=true
           done < <(
             find artifacts -type f \
