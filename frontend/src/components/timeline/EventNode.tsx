@@ -84,7 +84,7 @@ export function EventNode({ event, index, isSelected, onClick }: EventNodeProps)
         {fields.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5">
             {fields.map((f) => (
-              <span key={f.key} className={`text-[11px] inline-flex gap-1 ${isSelected ? "text-foreground/60" : "text-muted-foreground/50"}`}>
+              <span key={f.key} className={`text-[11px] inline-flex gap-1 ${isSelected ? "text-foreground/75" : "text-muted-foreground"}`}>
                 <span className="font-medium">{f.label}:</span>
                 <span className="truncate max-w-[180px]">{f.value}</span>
               </span>
