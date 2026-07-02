@@ -49,6 +49,28 @@ def test_scan_resolves_sessions_subdir(db, tmp_path) -> None:
     assert result["skipped"] == 0
 
 
+def test_scan_accepts_file_uri_path(db, tmp_path) -> None:
+    sessions = tmp_path / ".codex" / "sessions"
+    sessions.mkdir(parents=True)
+    result = scan_handler.handle_scan_codex_sessions(
+        {"path": (tmp_path / ".codex").resolve().as_uri()}
+    )
+    assert result["total"] == 0
+    assert result["pending_count"] == 0
+    assert result["skipped"] == 0
+
+
+def test_import_directory_accepts_file_uri_path(db, tmp_path) -> None:
+    sessions = tmp_path / ".codex" / "sessions"
+    sessions.mkdir(parents=True)
+    result = import_handler.handle(
+        {"input_path": (tmp_path / ".codex").resolve().as_uri()}
+    )
+    assert result["total_files"] == 0
+    assert result["imported_session_count"] == 0
+    assert result["skipped"] == 0
+
+
 @pytest.mark.skipif(not _has_samples(), reason="samples/codex-cli not available")
 def test_scan_all_pending_then_skipped_after_import(db, tmp_path) -> None:
     sample_files = sorted(SAMPLES_DIR.rglob("rollout-*.jsonl"))

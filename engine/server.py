@@ -33,6 +33,7 @@ HANDLERS = {
 
 
 def main() -> None:
+    _configure_stdio()
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     conn = get_connection()
     initialize_schema(conn)
@@ -81,12 +82,23 @@ def _write_error(req_id: str | None, code: str, message: str) -> None:
 
 
 def _write_line(obj: dict) -> None:
+    payload = (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8")
     try:
-        sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
-        sys.stdout.flush()
+        if hasattr(sys.stdout, "buffer"):
+            sys.stdout.buffer.write(payload)
+            sys.stdout.buffer.flush()
+        else:
+            sys.stdout.write(payload.decode("utf-8"))
+            sys.stdout.flush()
     except BrokenPipeError:
         # Parent process closed stdout — exit cleanly.
         sys.exit(0)
+
+
+def _configure_stdio() -> None:
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
 
 
 if __name__ == "__main__":

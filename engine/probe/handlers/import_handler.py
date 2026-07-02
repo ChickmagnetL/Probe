@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from probe.codex_adapter import run_codex_rollout_demo
+from probe.path_utils import path_from_user_input
 from probe.storage import transaction
 from probe.storage import event_dao, import_dao, imported_files_dao, session_dao
 
@@ -27,7 +28,7 @@ def handle(params: dict[str, Any]) -> dict[str, Any]:
     if not input_path:
         raise ValueError("input_path is required")
 
-    path = Path(input_path).expanduser()
+    path = path_from_user_input(input_path)
     if not path.exists():
         raise FileNotFoundError(f"input path does not exist: {path}")
 
@@ -52,7 +53,7 @@ def handle_batch(params: dict[str, Any]) -> dict[str, Any]:
     for entry in file_paths:
         if not isinstance(entry, str) or not entry:
             raise ValueError("each entry in file_paths must be a non-empty string")
-        p = Path(entry).expanduser()
+        p = path_from_user_input(entry)
         if not p.is_file():
             raise FileNotFoundError(f"file not found: {p}")
         paths.append(p)
