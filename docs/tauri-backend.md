@@ -60,7 +60,7 @@
 | DB 路径（engine 解析） | `~/Library/Application Support/probe_desktop/probe_desktop.sqlite` | `%LOCALAPPDATA%/probe_desktop/probe_desktop.sqlite`（回退 `%APPDATA%`） |
 | 默认 Codex 会话目录 | `~/.codex` | `%USERPROFILE%\.codex` |
 | 焦点处理 | `setup` 中延迟 100ms `set_focus` | 同上 |
-| Python 查找（dev） | `python3` → `python` | 同上 |
+| Python 查找（dev） | `TAURI_PYTHON_PATH` → `engine/.venv/bin/python` → `python3` → `python` | `TAURI_PYTHON_PATH` → `engine/.venv/Scripts/python.exe` → `python3` → `python` |
 
 ---
 
@@ -230,7 +230,7 @@ Tauri v2 用 **capabilities**（能力声明——白名单权限机制：默认
 
 | 模式 | 判定 | engine 启动方式 | 工作目录 |
 |------|------|----------------|---------|
-| dev（debug 构建） | `is_bundled()` 强制返回 `false`（dev 下 `externalBin` 也会拷贝 `probe-engine` 到 exe 同目录，靠存在性无法区分） | `find_python()` 找 `python3`/`python`（或 `TAURI_PYTHON_PATH` 环境变量）运行 `engine/server.py` | `CARGO_MANIFEST_DIR/../engine`（编译期注入的源码 engine 目录） |
+| dev（debug 构建） | `is_bundled()` 强制返回 `false`（dev 下 `externalBin` 也会拷贝 `probe-engine` 到 exe 同目录，靠存在性无法区分） | `find_python(engine_dir)` 按顺序找：`TAURI_PYTHON_PATH` 环境变量 → `engine/.venv/` 内的 Python（macOS `bin/python`、Windows `Scripts/python.exe`）→ PATH 里的 `python3`/`python`，用于运行 `engine/server.py` | `CARGO_MANIFEST_DIR/../engine`（编译期注入的源码 engine 目录） |
 | release | 检查 exe 同目录下 `probe-engine`（Windows 为 `probe-engine.exe`）是否存在 | PyInstaller 二进制启动 | `$HOME` / `%USERPROFILE%`（bundled 二进制内部自行解析 DB 路径） |
 | 覆盖 | — | `TAURI_ENGINE_PATH` 环境变量可覆盖 engine 路径（调试用） | — |
 
