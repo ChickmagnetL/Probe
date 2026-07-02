@@ -29,8 +29,12 @@ const AUX_INPUT_PREFIXES = [
   "<turn_aborted>",
 ];
 
+function displayContent(event: EventRow): string | null {
+  return event.content ?? event.content_preview ?? null;
+}
+
 function isAuxInput(ev: EventRow): boolean {
-  const text = (ev.content ?? "").trimStart();
+  const text = (displayContent(ev) ?? "").trimStart();
   if (!text) return false;
   return AUX_INPUT_PREFIXES.some((p) => text.startsWith(p));
 }
@@ -265,7 +269,7 @@ export function ConversationView({
                       `}
                     >
                       <div className="text-sm whitespace-pre-wrap break-words">
-                        {turn.user!.content || t("conversation.empty")}
+                        {displayContent(turn.user!) ?? t("conversation.empty")}
                       </div>
                       {turn.user!.timestamp && (
                         <div className="text-[10px] mt-2 opacity-50">
@@ -295,7 +299,7 @@ export function ConversationView({
                       `}
                     >
                       <div className="text-sm whitespace-pre-wrap break-words">
-                        {turn.assistant!.content || t("conversation.empty")}
+                        {displayContent(turn.assistant!) ?? t("conversation.empty")}
                       </div>
                       {turn.assistant!.timestamp && (
                         <div className="text-[10px] mt-2 opacity-50">
