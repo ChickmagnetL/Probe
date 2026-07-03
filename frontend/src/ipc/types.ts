@@ -15,6 +15,8 @@ export interface UpdateInfo {
   pub_date: string | null;
 }
 
+export type SessionPlatform = "codex_cli" | "claude_code";
+
 export type UpdateStatus =
   | "checking"
   | "up-to-date"
@@ -65,6 +67,7 @@ export interface SessionMetrics {
 
 export interface SessionSummary {
   session_id: string;
+  platform: SessionPlatform;
   short_id: string;
   display_name: string;
   source_path: string | null;
@@ -111,6 +114,7 @@ export interface ChildSessionDetail extends SessionRow {
 
 export interface SessionRow {
   id: string;
+  platform: SessionPlatform;
   source_path: string | null;
   file_name: string | null;
   parent_session_id: string | null;
@@ -194,6 +198,7 @@ export interface TokenUsage {
 
 export interface ListSessionsParams {
   filter?: string;
+  platform?: SessionPlatform;
   sort?: string;
   sort_order?: "asc" | "desc";
   offset?: number;
@@ -212,12 +217,33 @@ export interface Settings {
   codex_path?: string;
   /** OS-default Codex path, present when the engine can infer one. */
   default_codex_path?: string;
+  /** Configured Claude Code sessions root path (may be absent). */
+  claude_path?: string;
+  /** OS-default Claude path, present when the engine can infer one. */
+  default_claude_path?: string;
+  /** Persisted platform filter for the session library. */
+  active_platform?: SessionPlatform;
   [key: string]: string | undefined;
 }
 
 export interface SetSettingsParams {
   key: string;
   value: string | number | boolean;
+}
+
+export interface ImportFilesParams {
+  input_path: string;
+  platform?: SessionPlatform;
+}
+
+export interface ScanSessionsParams {
+  path: string;
+  platform: SessionPlatform;
+}
+
+export interface ImportFilesBatchParams {
+  file_paths: string[];
+  platform?: SessionPlatform;
 }
 
 // ── Incremental scan / batch import ────────────────────

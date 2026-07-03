@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
 
-from probe.codex_adapter import run_codex_rollout_demo
+from probe import platform_registry
 from probe.path_utils import path_from_user_input
 from probe.storage import transaction
 from probe.storage import event_dao, import_dao, imported_files_dao, session_dao
@@ -32,9 +31,10 @@ def handle(params: dict[str, Any]) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"input path does not exist: {path}")
 
+    platform = _resolve_platform(path=path, platform_value=params.get("platform"))
     if path.is_dir():
-        return _import_directory_incremental(path)
-    return _import_files([path])
+        return _import_directory_incremental(path, platform=platform)
+    return _import_files([path], platform=platform)
 
 
 def handle_batch(params: dict[str, Any]) -> dict[str, Any]:
@@ -58,19 +58,29 @@ def handle_batch(params: dict[str, Any]) -> dict[str, Any]:
             raise FileNotFoundError(f"file not found: {p}")
         paths.append(p)
 
-    return _import_files(paths)
+    platform_value = params.get("platform")
+    if platform_value is not None and not isinstance(platform_value, str):
+        raise ValueError("platform must be a string")
+    platform = platform_registry.ensure_platform_for_paths(
+        explicit_platform=platform_registry.normalize_platform(platform_value),
+        paths=paths,
+    )
+    return _import_files(paths, platform=platform)
 
 
-def _import_directory_incremental(directory: Path) -> dict[str, Any]:
+def _import_directory_incremental(directory: Path, *, platform: str) -> dict[str, Any]:
     # Defer to scan_handler to classify pending vs skipped. Parse the pending
     # files via the batch path so `imported_files` rows are written.
     from probe.handlers import scan_handler
 
-    scan_result = scan_handler.handle_scan_codex_sessions({"path": str(directory)})
+    scan_result = scan_handler.handle_scan_sessions(
+        {"path": str(directory), "platform": platform}
+    )
     pending_paths = [Path(item["path"]) for item in scan_result["pending"]]
 
     if not pending_paths:
         return {
+            "platform": platform,
             "total_files": scan_result["total"],
             "parsed_records": 0,
             "parse_errors": 0,
@@ -86,8 +96,9 @@ def _import_directory_incremental(directory: Path) -> dict[str, Any]:
             "errors": [],
         }
 
-    batch_result = _import_files(pending_paths)
+    batch_result = _import_files(pending_paths, platform=platform)
     return {
+        "platform": platform,
         "total_files": scan_result["total"],
         "parsed_records": batch_result["parsed_records"],
         "parse_errors": batch_result["parse_errors"],
@@ -104,7 +115,7 @@ def _import_directory_incremental(directory: Path) -> dict[str, Any]:
     }
 
 
-def _import_files(paths: list[Path]) -> dict[str, Any]:
+def _import_files(paths: list[Path], *, platform: str) -> dict[str, Any]:
     """Parse `paths` together and persist results, tracking each file in imported_files."""
     # Pre-compute file stats before parsing so the recorded mtime/size reflects
     # the file as it was at import time (a parse error must still record stats
@@ -115,12 +126,12 @@ def _import_files(paths: list[Path]) -> dict[str, Any]:
         stat_by_path[str(p.resolve())] = (float(stat.st_mtime), int(stat.st_size))
 
     try:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            summary = run_codex_rollout_demo([str(p) for p in paths], tmp_dir)
+        summary = platform_registry.parse_files(platform, paths)
     except Exception as exc:
         # Whole-batch parse failure: surface as errors, do not crash the engine.
         logger.error("batch import parse failed: %s", exc, exc_info=True)
         return {
+            "platform": platform,
             "total_files": len(paths),
             "parsed_files": 0,
             "imported_session_count": 0,
@@ -138,11 +149,12 @@ def _import_files(paths: list[Path]) -> dict[str, Any]:
             ],
         }
 
-    _persist_import(summary, stat_by_path)
+    _persist_import(summary, stat_by_path, platform=platform)
 
     sessions = summary.get("sessions", [])
     parsed_files = len(paths)
     return {
+        "platform": platform,
         "total_files": parsed_files,
         "parsed_files": parsed_files,
         "imported_session_count": summary.get("imported_session_count", 0),
@@ -162,6 +174,8 @@ def _import_files(paths: list[Path]) -> dict[str, Any]:
 def _persist_import(
     summary: dict[str, Any],
     stat_by_path: dict[str, tuple[float, int]],
+    *,
+    platform: str,
 ) -> None:
     """Persist sessions/events and record each source file in imported_files.
 
@@ -188,7 +202,7 @@ def _persist_import(
         for s in sessions:
             if s.get("is_synthetic"):
                 continue
-            session_dao.upsert(conn, _to_session_row(s))
+            session_dao.upsert(conn, _to_session_row(s, platform=platform))
             events = s.get("events", [])
             if events:
                 # Delete existing events for this session before re-inserting
@@ -209,21 +223,30 @@ def _persist_import(
 
         for source_path, (mtime, size) in stat_by_path.items():
             session_id = session_id_by_source.get(source_path, "")
-            imported_files_dao.upsert(conn, source_path, mtime, size, session_id)
+            imported_files_dao.upsert(
+                conn,
+                source_path,
+                platform,
+                mtime,
+                size,
+                session_id,
+            )
 
         persisted_count = sum(1 for s in sessions if not s.get("is_synthetic"))
         import_dao.insert(conn, {
             "id": import_id,
             "input_path": ",".join(sorted(stat_by_path.keys())),
+            "platform": platform,
             "file_count": len(stat_by_path),
             "session_count": persisted_count,
             "status": "completed",
         })
 
 
-def _to_session_row(s: dict[str, Any]) -> dict[str, Any]:
+def _to_session_row(s: dict[str, Any], *, platform: str) -> dict[str, Any]:
     return {
         "id": s["session_id"],
+        "platform": s.get("platform", platform),
         "source_path": s.get("source_path"),
         "file_name": s.get("file_name"),
         "parent_session_id": s.get("parent_session_id"),
@@ -235,6 +258,15 @@ def _to_session_row(s: dict[str, Any]) -> dict[str, Any]:
         "title": s.get("title"),
         "cwd": s.get("cwd"),
     }
+
+
+def _resolve_platform(*, path: Path, platform_value: Any) -> str:
+    if platform_value is not None and not isinstance(platform_value, str):
+        raise ValueError("platform must be a string")
+    return (
+        platform_registry.normalize_platform(platform_value)
+        or platform_registry.detect_input_platform(path)
+    )
 
 
 def _to_event_rows(events: list[dict[str, Any]]) -> list[dict[str, Any]]:

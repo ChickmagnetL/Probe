@@ -1,4 +1,4 @@
-"""Handle scan_codex_sessions method — discover pending rollout files incrementally.
+"""Handle scan methods — discover pending session files incrementally.
 
 Scan only: collect file stats, compare against imported_files table, classify
 each file as pending (new/changed) or skipped (unchanged). Does not parse or
@@ -10,33 +10,35 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from probe.codex_adapter.reader import is_rollout_file
+from probe import platform_registry
 from probe.path_utils import path_from_user_input
 from probe.storage import get_connection
 from probe.storage import imported_files_dao
 
 
-def handle_scan_codex_sessions(params: dict[str, Any]) -> dict[str, Any]:
+def handle_scan_sessions(params: dict[str, Any]) -> dict[str, Any]:
     path_value = params.get("path")
     if not path_value or not isinstance(path_value, str):
         raise ValueError("path is required")
 
-    sessions_dir = _resolve_sessions_dir(path_value)
-    if not sessions_dir.is_dir():
-        raise FileNotFoundError(f"sessions directory does not exist: {sessions_dir}")
-
-    # Use rglob directly (instead of discover_rollout_files) so an empty
-    # sessions directory scans cleanly to total=0 rather than raising.
-    files = sorted(
-        candidate.resolve()
-        for candidate in sessions_dir.rglob("rollout-*.jsonl")
-        if is_rollout_file(candidate)
+    input_path = path_from_user_input(path_value)
+    platform_value = params.get("platform")
+    if platform_value is not None and not isinstance(platform_value, str):
+        raise ValueError("platform must be a string")
+    platform = (
+        platform_registry.normalize_platform(platform_value)
+        or platform_registry.detect_input_platform(input_path)
     )
+    scan_root = platform_registry.resolve_scan_root(platform, path_value)
+    if not scan_root.is_dir():
+        raise FileNotFoundError(f"scan directory does not exist: {scan_root}")
+
+    files = platform_registry.discover_scan_files(platform, scan_root)
 
     conn = get_connection()
-    imported_files_dao.delete_orphaned(conn)
+    imported_files_dao.delete_orphaned(conn, platform=platform)
     conn.commit()
-    known = imported_files_dao.get_all(conn)
+    known = imported_files_dao.get_all(conn, platform=platform)
 
     pending: list[dict[str, Any]] = []
     skipped = 0
@@ -56,6 +58,7 @@ def handle_scan_codex_sessions(params: dict[str, Any]) -> dict[str, Any]:
     pending.sort(key=lambda item: item["path"])
 
     return {
+        "platform": platform,
         "total": len(files),
         "pending": pending,
         "pending_count": len(pending),
@@ -63,21 +66,7 @@ def handle_scan_codex_sessions(params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _resolve_sessions_dir(path_value: str) -> Path:
-    """Resolve a Codex root path to the directory holding rollout files.
-
-    Accepts any of:
-      - the Codex root (e.g. `~/.codex`) — appends `/sessions`
-      - the sessions directory itself (path ending in `sessions`)
-      - any directory that directly contains rollout-*.jsonl files (used when
-        the caller points at a date subdirectory like `.../2026/04/04`)
-
-    Existence is not checked here; the caller validates.
-    """
-    expanded = path_from_user_input(path_value)
-    if expanded.name == "sessions":
-        return expanded
-    sessions_subdir = expanded / "sessions"
-    if sessions_subdir.is_dir():
-        return sessions_subdir
-    return expanded
+def handle_scan_codex_sessions(params: dict[str, Any]) -> dict[str, Any]:
+    result = handle_scan_sessions({**params, "platform": "codex_cli"})
+    result.pop("platform", None)
+    return result

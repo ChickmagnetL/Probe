@@ -151,8 +151,10 @@
   },
   "settings": {
     "title": "设置",
-    "subtitle": "配置 Probe 扫描 Codex CLI 会话的路径。",
+    "subtitle": "配置 Probe 扫描 Codex CLI 和 Claude Code 会话的路径。",
+    "sessionPaths": "会话路径",
     "codexPath": "Codex CLI 路径",
+    "claudePath": "Claude Code 路径",
     "default": "默认：",
     "save": "保存",
     "saving": "保存中...",
@@ -163,6 +165,13 @@
     "language": "语言",
     "languageHint": "切换后界面会立即重新加载。",
     "browse": "浏览"
+  },
+  "platform": {
+    "codexCli": "Codex",
+    "claudeCode": "Claude",
+    "switcherAria": "切换会话平台",
+    "codexCliAria": "显示 Codex CLI 会话",
+    "claudeCodeAria": "显示 Claude Code 会话"
   },
   "updates": {
     "title": "应用更新",

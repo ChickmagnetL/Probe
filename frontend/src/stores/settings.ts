@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { toIpcError } from "../ipc/errors";
 import { invoke } from "../ipc/invoke";
-import type { IpcError, Settings } from "../ipc/types";
+import type { IpcError, SessionPlatform, Settings } from "../ipc/types";
 
 interface SettingsState {
   settings: Settings;
@@ -13,6 +13,10 @@ interface SettingsState {
   load: () => Promise<void>;
   /** Persist the Codex CLI path to the engine KV store and mirror it locally. */
   setCodexPath: (path: string) => Promise<void>;
+  /** Persist the Claude Code path to the engine KV store and mirror it locally. */
+  setClaudePath: (path: string) => Promise<void>;
+  /** Persist the active session platform filter and mirror it locally. */
+  setActivePlatform: (platform: SessionPlatform) => Promise<void>;
   /** Persist the interface language to the engine KV store and mirror it locally. */
   setInterfaceLanguage: (lang: string) => Promise<void>;
 }
@@ -41,6 +45,28 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       set({ settings, loading: false });
     } catch (e) {
       set({ error: toIpcError(e), loading: false });
+    }
+  },
+
+  setClaudePath: async (path) => {
+    set({ loading: true, error: null });
+    try {
+      await invoke.setSettings("claude_path", path);
+      const settings = await invoke.getSettings();
+      set({ settings, loading: false });
+    } catch (e) {
+      set({ error: toIpcError(e), loading: false });
+    }
+  },
+
+  setActivePlatform: async (platform) => {
+    set({ error: null });
+    try {
+      await invoke.setSettings("active_platform", platform);
+      const settings = await invoke.getSettings();
+      set({ settings });
+    } catch (e) {
+      set({ error: toIpcError(e) });
     }
   },
 

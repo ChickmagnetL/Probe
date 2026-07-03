@@ -5,6 +5,7 @@ import { useImportStore } from "../stores/import";
 import { usePanelStore } from "../stores/panel";
 import { useSettingsStore } from "../stores/settings";
 import { useImportProgressStore } from "../stores/import_progress";
+import { getActivePlatform, getEffectivePlatformPath } from "../lib/session-platform";
 import { SessionList } from "../components/session/SessionList";
 import { PanelContainer } from "../components/panel/PanelContainer";
 import { EmptyState } from "../components/shared/EmptyState";
@@ -23,8 +24,9 @@ import { FilterBar } from "../components/shared/FilterBar";
 import { ConfirmDialog } from "../components/shared/ConfirmDialog";
 import { SettingsPanel } from "../components/settings/SettingsPanel";
 import { ProgressBar } from "../components/shared/ProgressBar";
+import { PlatformSwitcher } from "../components/shared/PlatformSwitcher";
 import { invoke } from "../ipc/invoke";
-import type { EventRow } from "../ipc/types";
+import type { EventRow, SessionPlatform } from "../ipc/types";
 
 function useSortOptions() {
   const { t } = useTranslation();
@@ -50,6 +52,7 @@ export function AppView() {
     exitSelectionMode,
     selectAll,
     deleteSessions,
+    resetForPlatformChange,
   } = useSessionStore();
   const openImportModal = useImportStore((s) => s.openModal);
   const root = usePanelStore((s) => s.root);
@@ -57,10 +60,12 @@ export function AppView() {
 
   // Settings + incremental import
   const settingsInitialized = useSettingsStore((s) => s.initialized);
+  const settings = useSettingsStore((s) => s.settings);
   const settingsLoad = useSettingsStore((s) => s.load);
-  const effectiveCodexPath = useSettingsStore(
-    (s) => s.settings.codex_path ?? s.settings.default_codex_path,
-  );
+  const setActivePlatform = useSettingsStore((s) => s.setActivePlatform);
+  const activePlatform = getActivePlatform(settings);
+  const effectiveCodexPath = getEffectivePlatformPath(settings, "codex_cli");
+  const effectiveClaudePath = getEffectivePlatformPath(settings, "claude_code");
   const runIncrementalImport = useImportProgressStore((s) => s.runIncrementalImport);
   const importActive = useImportProgressStore((s) => s.active);
   const importTotal = useImportProgressStore((s) => s.total);
@@ -125,6 +130,7 @@ export function AppView() {
   }, [handleMouseMove]);
 
   useEffect(() => {
+    if (!settingsInitialized) return;
     // Skip search while the IME is composing — the search text is still
     // intermediate pinyin. When composition ends, isComposing flips to false,
     // this effect re-runs, and the search fires with the confirmed value.
@@ -134,22 +140,24 @@ export function AppView() {
       const [sortField, sortOrder] = sort.split(":") as [string, "asc" | "desc"];
       fetchSessions({
         filter: search || undefined,
+        platform: activePlatform,
         sort: sortField,
         sort_order: sortOrder,
       });
     }, search ? 300 : 0);
     return () => clearTimeout(debounceRef.current);
-  }, [search, sort, fetchSessions, isComposing]);
+  }, [search, sort, fetchSessions, isComposing, settingsInitialized, activePlatform]);
 
   // Listen for dev-mock data updates (browser mode dynamic import)
   useEffect(() => {
-    const handler = () => fetchSessions();
+    if (!settingsInitialized) return;
+    const handler = () => fetchSessions({ platform: activePlatform });
     window.addEventListener("dev-mock-updated", handler);
     return () => window.removeEventListener("dev-mock-updated", handler);
-  }, [fetchSessions]);
+  }, [fetchSessions, settingsInitialized, activePlatform]);
 
   // Load settings on mount; once loaded, trigger a background incremental
-  // scan/import if a Codex path is configured. Guarded by a ref so StrictMode
+  // scan/import if a platform path is configured. Guarded by a ref so StrictMode
   // double-invoke and re-renders do not start a second concurrent run.
   useEffect(() => {
     if (!settingsInitialized) {
@@ -157,11 +165,25 @@ export function AppView() {
       return;
     }
     if (autoScanStartedRef.current) return;
-    if (effectiveCodexPath) {
-      autoScanStartedRef.current = true;
-      void runIncrementalImport(effectiveCodexPath);
+    const targets = [
+      effectiveCodexPath
+        ? { platform: "codex_cli" as const, path: effectiveCodexPath }
+        : null,
+      effectiveClaudePath
+        ? { platform: "claude_code" as const, path: effectiveClaudePath }
+        : null,
+    ].filter((target): target is { platform: SessionPlatform; path: string } => Boolean(target));
+    autoScanStartedRef.current = true;
+    if (targets.length > 0) {
+      void runIncrementalImport(targets);
     }
-  }, [settingsInitialized, effectiveCodexPath, settingsLoad, runIncrementalImport]);
+  }, [
+    settingsInitialized,
+    effectiveCodexPath,
+    effectiveClaudePath,
+    settingsLoad,
+    runIncrementalImport,
+  ]);
 
   const sortedEvents = useMemo(() => {
     if (!detail?.events) return [];
@@ -255,6 +277,31 @@ export function AppView() {
     }
   }, [selectionMode, selectedCount, enterSelectionMode, exitSelectionMode]);
 
+  const handlePlatformSwitch = useCallback(
+    async (platform: SessionPlatform) => {
+      if (platform === activePlatform) return;
+      await setActivePlatform(platform);
+      resetForPlatformChange(platform);
+      resetLayout();
+      const [sortField, sortOrder] = sort.split(":") as [string, "asc" | "desc"];
+      await fetchSessions({
+        filter: search || undefined,
+        platform,
+        sort: sortField,
+        sort_order: sortOrder,
+      });
+    },
+    [
+      activePlatform,
+      fetchSessions,
+      resetForPlatformChange,
+      resetLayout,
+      search,
+      setActivePlatform,
+      sort,
+    ],
+  );
+
   return (
     <ErrorBoundary>
     <div className="relative flex h-screen overflow-hidden bg-background">
@@ -320,6 +367,10 @@ export function AppView() {
               <h1 className="text-base font-semibold tracking-tight text-foreground">Probe</h1>
             </div>
           </TitleDragRegion>
+          <PlatformSwitcher
+            activePlatform={activePlatform}
+            onSwitch={handlePlatformSwitch}
+          />
           <button
             data-tauri-drag-region="false"
             onClick={() => setSettingsOpen(true)}

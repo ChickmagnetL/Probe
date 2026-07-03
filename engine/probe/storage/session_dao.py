@@ -18,11 +18,12 @@ _KIND_PARAMS: tuple[str, ...] = tuple(sorted(INDEXABLE_KINDS))
 
 def upsert(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
     conn.execute(
-        """INSERT INTO sessions (id, source_path, file_name, parent_session_id,
+        """INSERT INTO sessions (id, platform, source_path, file_name, parent_session_id,
                is_subagent, agent_nickname, agent_role, start_time, end_time,
                title, cwd)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
+               platform=excluded.platform,
                source_path=excluded.source_path,
                file_name=excluded.file_name,
                parent_session_id=excluded.parent_session_id,
@@ -35,6 +36,7 @@ def upsert(conn: sqlite3.Connection, session: dict[str, Any]) -> None:
                cwd=excluded.cwd""",
         (
             session["id"],
+            session.get("platform", "codex_cli"),
             session.get("source_path"),
             session.get("file_name"),
             session.get("parent_session_id"),
@@ -64,6 +66,7 @@ def get_by_id(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] | Non
 def list_sessions(
     conn: sqlite3.Connection,
     *,
+    platform: str | None = None,
     filter_text: str | None = None,
     sort_by: str = "imported_at",
     sort_order: str = "desc",
@@ -72,6 +75,10 @@ def list_sessions(
 ) -> tuple[list[dict[str, Any]], int]:
     where_clauses: list[str] = []
     params: list[Any] = []
+
+    if platform:
+        where_clauses.append("platform = ?")
+        params.append(platform)
 
     if filter_text:
         # Metadata match (file_name / source_path / agent_nickname) OR body

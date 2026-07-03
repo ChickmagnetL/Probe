@@ -5,11 +5,14 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from probe import platform_registry
 from probe.storage import get_connection
 from probe.storage import settings_dao
 
 # Key under which the configured Codex CLI sessions root is stored.
 CODEX_PATH_KEY = "codex_path"
+CLAUDE_PATH_KEY = "claude_path"
+ACTIVE_PLATFORM_KEY = "active_platform"
 
 
 def default_codex_path() -> str | None:
@@ -24,15 +27,27 @@ def default_codex_path() -> str | None:
     return os.path.join(home, ".codex")
 
 
+def default_claude_path() -> str | None:
+    """Return the OS-default Claude Code directory, or None if it cannot be inferred."""
+    home = os.path.expanduser("~")
+    if not home or home == "~":
+        return None
+    return os.path.join(home, ".claude")
+
+
 def handle_get(params: dict[str, Any]) -> dict[str, Any]:
     # Currently no params; keep the signature uniform with other handlers.
     _ = params
     conn = get_connection()
     settings = settings_dao.get_all(conn)
     result: dict[str, Any] = dict(settings)
-    default = default_codex_path()
-    if default:
-        result["default_codex_path"] = default
+    codex_default = default_codex_path()
+    if codex_default:
+        result["default_codex_path"] = codex_default
+    claude_default = default_claude_path()
+    if claude_default:
+        result["default_claude_path"] = claude_default
+    result.setdefault(ACTIVE_PLATFORM_KEY, platform_registry.DEFAULT_SESSION_PLATFORM)
     return result
 
 

@@ -22,6 +22,7 @@ from probe.storage import get_connection, initialize_schema, close_connection
 HANDLERS = {
     "import_files": import_handler.handle,
     "import_files_batch": import_handler.handle_batch,
+    "scan_sessions": scan_handler.handle_scan_sessions,
     "scan_codex_sessions": scan_handler.handle_scan_codex_sessions,
     "list_sessions": session_handler.handle_list,
     "get_session_detail": session_handler.handle_detail,

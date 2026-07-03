@@ -151,8 +151,10 @@
   },
   "settings": {
     "title": "Settings",
-    "subtitle": "Configure where Probe scans for Codex CLI sessions.",
+    "subtitle": "Configure where Probe scans for Codex CLI and Claude Code sessions.",
+    "sessionPaths": "Session Paths",
     "codexPath": "Codex CLI Path",
+    "claudePath": "Claude Code Path",
     "default": "Default:",
     "save": "Save",
     "saving": "Saving...",
@@ -163,6 +165,13 @@
     "language": "Language",
     "languageHint": "The interface will reload immediately after switching.",
     "browse": "Browse"
+  },
+  "platform": {
+    "codexCli": "Codex",
+    "claudeCode": "Claude",
+    "switcherAria": "Switch session platform",
+    "codexCliAria": "Show Codex CLI sessions",
+    "claudeCodeAria": "Show Claude Code sessions"
   },
   "updates": {
     "title": "App updates",

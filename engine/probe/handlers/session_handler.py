@@ -50,6 +50,7 @@ def handle_list(params: dict[str, Any]) -> dict[str, Any]:
     conn = get_connection()
     sessions, total = session_dao.list_sessions(
         conn,
+        platform=params.get("platform"),
         filter_text=params.get("filter"),
         sort_by=params.get("sort", "imported_at"),
         sort_order=params.get("sort_order", "desc"),

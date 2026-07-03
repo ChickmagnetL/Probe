@@ -1,6 +1,11 @@
 import { create } from "zustand";
+import { toIpcError } from "../ipc/errors";
 import { invoke } from "../ipc/invoke";
+import { getActivePlatform } from "../lib/session-platform";
+import { useSettingsStore } from "./settings";
 import type {
+  IpcError,
+  SessionPlatform,
   SessionRow,
   SessionDetail,
   ListSessionsParams,
@@ -27,11 +32,16 @@ function cacheSet(key: string, val: SessionDetail): void {
   }
 }
 
+function buildDetailCacheKey(platform: SessionPlatform, sessionId: string): string {
+  return `${platform}:${sessionId}`;
+}
+
 interface SessionState {
   sessions: SessionRow[];
   total: number;
   loading: boolean;
-  error: string | null;
+  error: IpcError | null;
+  lastParams: ListSessionsParams;
 
   // Detail
   activeSessionId: string | null;
@@ -58,6 +68,7 @@ interface SessionState {
   fetchDetail: (sessionId: string) => Promise<void>;
   selectEvent: (eventId: string | null) => void;
   clearDetail: () => void;
+  resetForPlatformChange: (platform: SessionPlatform) => void;
   deleteSessions: (deleteFiles: boolean) => Promise<void>;
 }
 
@@ -66,6 +77,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   total: 0,
   loading: false,
   error: null,
+  lastParams: {},
   activeSessionId: null,
   detail: null,
   detailLoading: false,
@@ -108,17 +120,25 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   clearSelection: () => set({ selectedIds: new Set(), selectionMode: false }),
 
   fetchSessions: async (params) => {
-    set({ loading: true, error: null });
+    const currentPlatform = params?.platform ?? getActivePlatform(useSettingsStore.getState().settings);
+    const nextParams: ListSessionsParams = {
+      ...get().lastParams,
+      ...params,
+      platform: currentPlatform,
+    };
+    set({ loading: true, error: null, lastParams: nextParams });
     try {
-      const res = await invoke.listSessions(params);
+      const res = await invoke.listSessions(nextParams);
       set({ sessions: res.sessions, total: res.total, loading: false });
     } catch (e) {
-      set({ error: String(e), loading: false });
+      set({ error: toIpcError(e), loading: false });
     }
   },
 
   fetchDetail: async (sessionId) => {
-    const cached = cacheGet(sessionId);
+    const platform = getActivePlatform(useSettingsStore.getState().settings);
+    const cacheKey = buildDetailCacheKey(platform, sessionId);
+    const cached = cacheGet(cacheKey);
     if (cached) {
       set({ activeSessionId: sessionId, detail: cached, detailLoading: false, selectedEventId: null });
       return;
@@ -127,10 +147,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ detailLoading: true, activeSessionId: sessionId, selectedEventId: null });
     try {
       const detail = await invoke.getSessionDetail(sessionId);
-      cacheSet(sessionId, detail);
+      cacheSet(cacheKey, detail);
       set({ detail, detailLoading: false });
     } catch (e) {
-      set({ error: String(e), detailLoading: false });
+      set({ error: toIpcError(e), detailLoading: false });
     }
   },
 
@@ -138,6 +158,23 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   clearDetail: () => {
     set({ activeSessionId: null, detail: null, detailLoading: false, selectedEventId: null });
+  },
+
+  resetForPlatformChange: (platform) => {
+    set((state) => ({
+      sessions: [],
+      total: 0,
+      loading: false,
+      error: null,
+      lastParams: { ...state.lastParams, platform },
+      activeSessionId: null,
+      detail: null,
+      detailLoading: false,
+      selectedEventId: null,
+      expandedSessions: new Set<string>(),
+      selectedIds: new Set(),
+      selectionMode: false,
+    }));
   },
 
   deleteSessions: async (deleteFiles) => {
@@ -155,7 +192,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       // Refresh the list
       await fetchSessions();
     } catch (e) {
-      set({ error: String(e) });
+      set({ error: toIpcError(e) });
     }
   },
 }));

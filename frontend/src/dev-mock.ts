@@ -2,10 +2,12 @@
  * Browser dev-mock system. Provides an in-memory invoke function
  * that replaces Tauri IPC in browser mode (no __TAURI_INTERNALS__).
  */
+import { DEFAULT_SESSION_PLATFORM, getActivePlatform } from "./lib/session-platform";
 import type { JSONDict } from "./lib/parser/models";
 import { processFiles } from "./lib/parser/index";
 import type {
   AppInfo,
+  SessionPlatform,
   ImportResult,
   SessionRow,
   SessionDetail,
@@ -25,10 +27,19 @@ import type {
 
 let currentSummary: JSONDict | null = null;
 let rawFileContents: Map<string, string> = new Map();
+let rawFilePlatforms: Map<string, SessionPlatform> = new Map();
 let pendingFiles: Array<{ path: string; content: string }> = [];
+let lastImportedPlatform: SessionPlatform = DEFAULT_SESSION_PLATFORM;
 
 // In-memory settings (browser mode). Mirrors the engine KV store.
 const mockSettings: Settings = {};
+
+function coerceSessionPlatform(
+  value: unknown,
+  fallback: SessionPlatform = DEFAULT_SESSION_PLATFORM,
+): SessionPlatform {
+  return value === "claude_code" || value === "codex_cli" ? value : fallback;
+}
 
 function getSessions(): SessionRow[] {
   if (!currentSummary) return [];
@@ -39,8 +50,10 @@ function getSessions(): SessionRow[] {
 }
 
 function sessionSummaryToRow(s: JSONDict): SessionRow {
+  const platform = coerceSessionPlatform(s.platform, lastImportedPlatform);
   return {
     id: String(s.session_id ?? ""),
+    platform,
     source_path: (s.source_path as string) ?? null,
     file_name: (s.file_name as string) ?? null,
     parent_session_id: (s.parent_session_id as string) ?? null,
@@ -141,8 +154,10 @@ function buildImportResult(summary: JSONDict): ImportResult {
 }
 
 function toSessionSummary(s: JSONDict): SessionSummary {
+  const platform = coerceSessionPlatform(s.platform, lastImportedPlatform);
   return {
     session_id: String(s.session_id ?? ""),
+    platform,
     short_id: String(s.short_id ?? ""),
     display_name: String(s.display_name ?? ""),
     source_path: (s.source_path as string) ?? null,
@@ -212,7 +227,11 @@ async function loadSample(url: string): Promise<void> {
   const response = await fetch(url);
   const content = await response.text();
   const fileName = url.split(/[\/\\]/).pop() ?? "sample.jsonl";
+  lastImportedPlatform = url.includes("claude-code")
+    ? "claude_code"
+    : DEFAULT_SESSION_PLATFORM;
   rawFileContents.set(fileName, content);
+  rawFilePlatforms.set(fileName, lastImportedPlatform);
   const files = [{ path: fileName, content }];
   currentSummary = processFiles(files);
   window.dispatchEvent(new CustomEvent("dev-mock-updated"));
@@ -229,10 +248,17 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
 
     switch (method) {
       case "import_files": {
+        lastImportedPlatform = coerceSessionPlatform(
+          methodParams.platform,
+          lastImportedPlatform,
+        );
         const files = pendingFiles.length > 0 ? pendingFiles : await openFilePicker();
         pendingFiles = [];
         if (files.length === 0) {
           return { cancelled: true } as T;
+        }
+        for (const file of files) {
+          rawFilePlatforms.set(file.path, lastImportedPlatform);
         }
         currentSummary = processFiles(files);
         return buildImportResult(currentSummary) as T;
@@ -241,14 +267,21 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
       case "list_sessions": {
         const sessions = getSessions();
         const _params = methodParams as ListSessionsParams;
-        let filtered = sessions;
+        const activePlatform = coerceSessionPlatform(
+          _params.platform,
+          getActivePlatform(mockSettings),
+        );
+        let filtered = sessions.filter((session) => session.platform === activePlatform);
         if (_params.filter) {
           const q = _params.filter.toLowerCase();
           filtered = sessions.filter(
             (s) =>
-              s.id.toLowerCase().includes(q) ||
-              (s.file_name ?? "").toLowerCase().includes(q) ||
-              (s.agent_nickname ?? "").toLowerCase().includes(q),
+              s.platform === activePlatform
+              && (
+                s.id.toLowerCase().includes(q)
+                || (s.file_name ?? "").toLowerCase().includes(q)
+                || (s.agent_nickname ?? "").toLowerCase().includes(q)
+              ),
           );
         }
         return { sessions: filtered as SessionRow[], total: filtered.length } as T;
@@ -281,6 +314,8 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
         return {
           ...mockSettings,
           default_codex_path: `${home}/.codex`,
+          default_claude_path: `${home}/.claude`,
+          active_platform: getActivePlatform(mockSettings),
         } as T;
       }
 
@@ -292,10 +327,16 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
         return { key, value } as T;
       }
 
+      case "scan_sessions":
       case "scan_codex_sessions": {
         // Browser mode has no filesystem; report whatever has been loaded as
         // "already imported" so the progress bar short-circuits cleanly.
-        const total = rawFileContents.size;
+        const platform = method === "scan_codex_sessions"
+          ? "codex_cli"
+          : coerceSessionPlatform(methodParams.platform);
+        const total = Array.from(rawFilePlatforms.values()).filter(
+          (value) => value === platform,
+        ).length;
         const result: ScanResult = {
           total,
           pending: [],

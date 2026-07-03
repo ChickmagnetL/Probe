@@ -946,14 +946,16 @@ export function buildTurnsFromEvents(events: RawEvent[]): GraphTurn[] {
   }
 
   // Sort by timestamp first
-  const sorted = [...events].sort((a, b) => {
+  const sorted = [...events]
+    .filter((event) => !shouldHideGraphEvent(event))
+    .sort((a, b) => {
     if (!a.timestamp && !b.timestamp) return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
     if (!a.timestamp) return 1;
     if (!b.timestamp) return -1;
     const cmp = a.timestamp.localeCompare(b.timestamp);
     if (cmp !== 0) return cmp;
     return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
-  });
+    });
 
   for (const ev of sorted) {
     if (USER_SIDE_KINDS.has(ev.kind)) {
@@ -1005,6 +1007,13 @@ function looksLikeAux(ev: RawEvent): boolean {
   const text = (ev.content ?? "").trimStart();
   if (!text) return false;
   return AUX_INPUT_PREFIXES.some((p) => text.startsWith(p));
+}
+
+function shouldHideGraphEvent(ev: RawEvent): boolean {
+  const rawMeta = typeof ev.metadata === "string"
+    ? (() => { try { return JSON.parse(ev.metadata); } catch { return null; } })()
+    : isRecord(ev.metadata) ? ev.metadata : null;
+  return rawMeta?.graph_hidden === true;
 }
 
 function toTurnEvent(ev: RawEvent): TurnEvent {

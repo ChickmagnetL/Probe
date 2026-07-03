@@ -85,3 +85,17 @@ def test_handle_detail_preserves_event_metadata_fields(monkeypatch: pytest.Monke
     assert metadata["record_type"] == "event_msg"
     assert metadata["payload_type"] == "exec_command_end"
     assert metadata["command"] == ["npm", "run", "build"]
+
+
+def test_handle_list_filters_by_platform(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    conn = open_connection(tmp_path / "probe.sqlite")
+    initialize_schema(conn)
+    session_dao.upsert(conn, {"id": "codex-session", "platform": "codex_cli"})
+    session_dao.upsert(conn, {"id": "claude-session", "platform": "claude_code"})
+    conn.commit()
+    monkeypatch.setattr(session_handler, "get_connection", lambda: conn)
+
+    result = session_handler.handle_list({"platform": "claude_code"})
+
+    assert result["total"] == 1
+    assert [session["id"] for session in result["sessions"]] == ["claude-session"]

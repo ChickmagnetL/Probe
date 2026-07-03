@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
+import { getEffectivePlatformPath } from "../../lib/session-platform";
 import { useSettingsStore } from "../../stores/settings";
 import { useImportProgressStore } from "../../stores/import_progress";
 import { SettingsTabs, type SettingsTab } from "./SettingsTabs";
@@ -17,18 +18,23 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const settings = useSettingsStore((s) => s.settings);
   const loading = useSettingsStore((s) => s.loading);
   const error = useSettingsStore((s) => s.error);
+  const initialized = useSettingsStore((s) => s.initialized);
   const load = useSettingsStore((s) => s.load);
   const setCodexPath = useSettingsStore((s) => s.setCodexPath);
+  const setClaudePath = useSettingsStore((s) => s.setClaudePath);
   const setInterfaceLanguage = useSettingsStore((s) => s.setInterfaceLanguage);
   const runIncrementalImport = useImportProgressStore((s) => s.runIncrementalImport);
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
-  const [path, setPath] = useState("");
+  const [codexPath, setCodexPathDraft] = useState("");
+  const [claudePath, setClaudePathDraft] = useState("");
   const [lang, setLang] = useState("");
   const [saving, setSaving] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const langRef = useRef<HTMLDivElement>(null);
-  const effectivePath = settings.codex_path ?? settings.default_codex_path ?? "";
+  const draftsHydratedRef = useRef(false);
+  const effectiveCodexPath = getEffectivePlatformPath(settings, "codex_cli");
+  const effectiveClaudePath = getEffectivePlatformPath(settings, "claude_code");
 
   // Load settings when the panel opens.
   useEffect(() => {
@@ -37,28 +43,31 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reactive prefill: when settings finish loading and the local input is
-  // still empty, sync the configured path or platform default into the input.
+  // Seed the draft inputs once per open cycle so later user edits are not
+  // overwritten while the panel remains open.
   useEffect(() => {
-    if (open && !path && effectivePath) {
-      setPath(effectivePath);
-    }
-  }, [open, effectivePath, path]);
+    if (!open || draftsHydratedRef.current || loading || !initialized) return;
+    setCodexPathDraft(effectiveCodexPath);
+    setClaudePathDraft(effectiveClaudePath);
+    setLang(settings.interface_language || i18n.language || "");
+    draftsHydratedRef.current = true;
+  }, [
+    open,
+    loading,
+    initialized,
+    effectiveCodexPath,
+    effectiveClaudePath,
+    settings.interface_language,
+  ]);
 
-  // Reactive prefill: when settings finish loading and the local draft is
-  // still empty, sync interface_language (i18n fallback) into the draft.
-  useEffect(() => {
-    if (open && !lang) {
-      setLang(settings.interface_language || i18n.language || "");
-    }
-  }, [open, settings.interface_language, lang]);
-
-  // Discard unsaved drafts when the panel closes so reopening reseed from
-  // the persisted values (the prefill effects above only run on empty drafts).
+  // Discard unsaved drafts when the panel closes so reopening rehydrates from
+  // the persisted values exactly once for the next open cycle.
   useEffect(() => {
     if (!open) {
-      setPath("");
+      setCodexPathDraft("");
+      setClaudePathDraft("");
       setLang("");
+      draftsHydratedRef.current = false;
     }
   }, [open]);
 
@@ -87,30 +96,58 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [langOpen]);
 
-  const handleBrowse = useCallback(async () => {
+  const handleBrowse = useCallback(async (platform: "codex_cli" | "claude_code") => {
     try {
-      const selected = await invoke.openFileDialog({ directory: true, title: "Select Codex CLI folder" });
-      if (selected) setPath(selected);
+      const selected = await invoke.openFileDialog({
+        directory: true,
+        title:
+          platform === "codex_cli"
+            ? "Select Codex CLI folder"
+            : "Select Claude Code folder",
+      });
+      if (!selected) return;
+      if (platform === "codex_cli") {
+        setCodexPathDraft(selected);
+        return;
+      }
+      setClaudePathDraft(selected);
     } catch {
       // Dialog cancelled or unavailable — keep current input.
     }
   }, []);
 
-  const defaultHint = settings.default_codex_path;
+  const defaultCodexHint = settings.default_codex_path;
+  const defaultClaudeHint = settings.default_claude_path;
   const currentLang = i18n.language;
-  const pathDirty = path.trim() !== effectivePath.trim();
+  const codexPathDirty = codexPath.trim() !== effectiveCodexPath.trim();
+  const claudePathDirty = claudePath.trim() !== effectiveClaudePath.trim();
   const langDirty = lang !== (settings.interface_language || currentLang || "");
-  const dirty = pathDirty || langDirty;
+  const dirty = codexPathDirty || claudePathDirty || langDirty;
 
   const handleSave = useCallback(async () => {
-    const trimmed = path.trim();
+    const codexValue = codexPath.trim();
+    const claudeValue = claudePath.trim();
     const langValue = lang.trim();
-    if (!trimmed && !langValue) return;
+    if (!dirty) return;
     setSaving(true);
     try {
-      if (pathDirty && trimmed) {
-        await setCodexPath(trimmed);
-        void runIncrementalImport(trimmed);
+      const importTargets: Array<{ platform: "codex_cli" | "claude_code"; path: string }> = [];
+      if (codexPathDirty) {
+        await setCodexPath(codexValue);
+        const nextCodexImportPath = codexValue || defaultCodexHint?.trim() || "";
+        if (nextCodexImportPath) {
+          importTargets.push({ platform: "codex_cli", path: nextCodexImportPath });
+        }
+      }
+      if (claudePathDirty) {
+        await setClaudePath(claudeValue);
+        const nextClaudeImportPath = claudeValue || defaultClaudeHint?.trim() || "";
+        if (nextClaudeImportPath) {
+          importTargets.push({ platform: "claude_code", path: nextClaudeImportPath });
+        }
+      }
+      if (importTargets.length > 0) {
+        void runIncrementalImport(importTargets);
       }
       if (langDirty && langValue) {
         await setInterfaceLanguage(langValue);
@@ -121,13 +158,19 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       setSaving(false);
     }
   }, [
-    path,
+    codexPath,
+    claudePath,
     lang,
-    pathDirty,
+    dirty,
+    codexPathDirty,
+    claudePathDirty,
     langDirty,
     setCodexPath,
+    setClaudePath,
     setInterfaceLanguage,
     runIncrementalImport,
+    defaultCodexHint,
+    defaultClaudeHint,
     onClose,
   ]);
 
@@ -165,40 +208,89 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
                 <>
                   <div className="mb-2">
                     <p id="settings-general-title" className="text-sm font-medium text-foreground">
-                      {t("settings.codexPath")}
+                      {t("settings.sessionPaths")}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {t("settings.subtitle")}
                     </p>
                   </div>
 
-                  <div className="flex gap-2 mt-4">
-                    <input
-                      id="codex-path-input"
-                      aria-labelledby="settings-general-title"
-                      type="text"
-                      value={path}
-                      onChange={(e) => setPath(e.target.value)}
-                      placeholder={defaultHint ?? "~/.codex"}
-                      spellCheck={false}
-                      className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
-                    />
-                    <button
-                      onClick={handleBrowse}
-                      className="btn-secondary flex items-center gap-2"
-                      type="button"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
-                        <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
-                      </svg>
-                      {t("settings.browse")}
-                    </button>
+                  <div className="mt-4 space-y-5">
+                    <div>
+                      <label
+                        htmlFor="codex-path-input"
+                        className="block text-sm font-medium text-foreground"
+                      >
+                        {t("settings.codexPath")}
+                      </label>
+                      <div className="flex gap-2 mt-2">
+                        <input
+                          id="codex-path-input"
+                          aria-labelledby="settings-general-title"
+                          type="text"
+                          value={codexPath}
+                          onChange={(e) => setCodexPathDraft(e.target.value)}
+                          placeholder={defaultCodexHint ?? "~/.codex"}
+                          spellCheck={false}
+                          className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                        />
+                        <button
+                          onClick={() => {
+                            void handleBrowse("codex_cli");
+                          }}
+                          className="btn-secondary flex items-center gap-2"
+                          type="button"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+                          </svg>
+                          {t("settings.browse")}
+                        </button>
+                      </div>
+                      {defaultCodexHint && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {t("settings.default")} <span className="font-mono">{defaultCodexHint}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="claude-path-input"
+                        className="block text-sm font-medium text-foreground"
+                      >
+                        {t("settings.claudePath")}
+                      </label>
+                      <div className="flex gap-2 mt-2">
+                        <input
+                          id="claude-path-input"
+                          type="text"
+                          value={claudePath}
+                          onChange={(e) => setClaudePathDraft(e.target.value)}
+                          placeholder={defaultClaudeHint ?? "~/.claude"}
+                          spellCheck={false}
+                          className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                        />
+                        <button
+                          onClick={() => {
+                            void handleBrowse("claude_code");
+                          }}
+                          className="btn-secondary flex items-center gap-2"
+                          type="button"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground">
+                            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+                          </svg>
+                          {t("settings.browse")}
+                        </button>
+                      </div>
+                      {defaultClaudeHint && (
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {t("settings.default")} <span className="font-mono">{defaultClaudeHint}</span>
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  {defaultHint && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {t("settings.default")} <span className="font-mono">{defaultHint}</span>
-                    </p>
-                  )}
                 </>
               )}
 

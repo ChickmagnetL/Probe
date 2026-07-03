@@ -1,11 +1,15 @@
 import type {
   AppInfo,
   EventRow,
+  ImportFilesBatchParams,
+  ImportFilesParams,
   ImportBatchResult,
   ImportResult,
   ListSessionsParams,
   ListSessionsResult,
+  ScanSessionsParams,
   ScanResult,
+  SessionPlatform,
   SessionDetail,
   Settings,
   UpdateInfo,
@@ -78,27 +82,47 @@ async function getProcessPlugin(): Promise<typeof import("@tauri-apps/plugin-pro
 }
 
 export const invoke = {
-  async importFiles(inputPath: string): Promise<ImportResult> {
+  async importFiles(
+    inputPath: string,
+    platform?: SessionPlatform,
+  ): Promise<ImportResult> {
     const fn = await getInvoke();
+    const params: ImportFilesParams = { input_path: inputPath };
+    if (platform) params.platform = platform;
     return fn<ImportResult>("engine_call", {
       method: "import_files",
-      params: { input_path: inputPath },
+      params,
+    });
+  },
+
+  async scanSessions(path: string, platform: SessionPlatform): Promise<ScanResult> {
+    const fn = await getInvoke();
+    const params: ScanSessionsParams = { path, platform };
+    return fn<ScanResult>("engine_call", {
+      method: "scan_sessions",
+      params,
     });
   },
 
   async scanCodexSessions(path: string): Promise<ScanResult> {
     const fn = await getInvoke();
+    const params: ScanSessionsParams = { path, platform: "codex_cli" };
     return fn<ScanResult>("engine_call", {
-      method: "scan_codex_sessions",
-      params: { path },
+      method: "scan_sessions",
+      params,
     });
   },
 
-  async importFilesBatch(filePaths: string[]): Promise<ImportBatchResult> {
+  async importFilesBatch(
+    filePaths: string[],
+    platform?: SessionPlatform,
+  ): Promise<ImportBatchResult> {
     const fn = await getInvoke();
+    const params: ImportFilesBatchParams = { file_paths: filePaths };
+    if (platform) params.platform = platform;
     return fn<ImportBatchResult>("engine_call", {
       method: "import_files_batch",
-      params: { file_paths: filePaths },
+      params,
     });
   },
 

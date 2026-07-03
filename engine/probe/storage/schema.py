@@ -27,6 +27,7 @@ _KIND_FILTER = ",".join(f"'{k}'" for k in sorted(INDEXABLE_KINDS))
 _TABLES_SQL = [
     """CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
+        platform TEXT NOT NULL DEFAULT 'codex_cli',
         source_path TEXT,
         file_name TEXT,
         parent_session_id TEXT,
@@ -62,6 +63,7 @@ _TABLES_SQL = [
     """CREATE TABLE IF NOT EXISTS imports (
         id TEXT PRIMARY KEY,
         input_path TEXT,
+        platform TEXT NOT NULL DEFAULT 'codex_cli',
         file_count INTEGER,
         session_count INTEGER,
         status TEXT,
@@ -73,6 +75,7 @@ _TABLES_SQL = [
     )""",
     """CREATE TABLE IF NOT EXISTS imported_files (
         source_path TEXT PRIMARY KEY,
+        platform TEXT NOT NULL DEFAULT 'codex_cli',
         mtime REAL,
         size INTEGER,
         session_id TEXT,
@@ -87,6 +90,9 @@ _INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_rule_results_rule_type ON rule_results(rule_type)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_parent ON sessions(parent_session_id)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_imported_at ON sessions(imported_at)",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_platform ON sessions(platform)",
+    "CREATE INDEX IF NOT EXISTS idx_imported_files_platform ON imported_files(platform)",
+    "CREATE INDEX IF NOT EXISTS idx_imports_platform ON imports(platform)",
     "CREATE INDEX IF NOT EXISTS idx_imported_files_session_id ON imported_files(session_id)",
 ]
 
@@ -94,25 +100,38 @@ _INDEXES_SQL = [
 # CREATE TABLE IF NOT EXISTS does not add columns, so each new column needs an
 # explicit ALTER TABLE guarded by a PRAGMA table_info existence check.
 _SESSION_COLUMN_ADDITIONS = {
+    "platform": "ALTER TABLE sessions ADD COLUMN platform TEXT NOT NULL DEFAULT 'codex_cli'",
     "title": "ALTER TABLE sessions ADD COLUMN title TEXT",
     "cwd": "ALTER TABLE sessions ADD COLUMN cwd TEXT",
+}
+_IMPORTS_COLUMN_ADDITIONS = {
+    "platform": "ALTER TABLE imports ADD COLUMN platform TEXT NOT NULL DEFAULT 'codex_cli'",
+}
+_IMPORTED_FILES_COLUMN_ADDITIONS = {
+    "platform": "ALTER TABLE imported_files ADD COLUMN platform TEXT NOT NULL DEFAULT 'codex_cli'",
 }
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
     for sql in _TABLES_SQL:
         conn.execute(sql)
-    _migrate_sessions_columns(conn)
+    _migrate_columns(conn, "sessions", _SESSION_COLUMN_ADDITIONS)
+    _migrate_columns(conn, "imports", _IMPORTS_COLUMN_ADDITIONS)
+    _migrate_columns(conn, "imported_files", _IMPORTED_FILES_COLUMN_ADDITIONS)
     for sql in _INDEXES_SQL:
         conn.execute(sql)
     _initialize_fts(conn)
     conn.commit()
 
 
-def _migrate_sessions_columns(conn: sqlite3.Connection) -> None:
-    """Add new sessions columns if missing (idempotent)."""
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}
-    for column, alter_sql in _SESSION_COLUMN_ADDITIONS.items():
+def _migrate_columns(
+    conn: sqlite3.Connection,
+    table_name: str,
+    additions: dict[str, str],
+) -> None:
+    """Add missing columns for an upgraded table (idempotent)."""
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table_name})")}
+    for column, alter_sql in additions.items():
         if column not in existing:
             conn.execute(alter_sql)
 

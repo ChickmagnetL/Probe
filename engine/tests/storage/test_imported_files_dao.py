@@ -10,10 +10,10 @@ def test_delete_by_session_ids_removes_matching_rows(tmp_path):
     initialize_schema(conn)
 
     imported_files_dao.upsert(
-        conn, source_path="/a/b.jsonl", mtime=1000.0, size=200, session_id="sid-1"
+        conn, source_path="/a/b.jsonl", platform="codex_cli", mtime=1000.0, size=200, session_id="sid-1"
     )
     imported_files_dao.upsert(
-        conn, source_path="/a/c.jsonl", mtime=2000.0, size=400, session_id="sid-2"
+        conn, source_path="/a/c.jsonl", platform="codex_cli", mtime=2000.0, size=400, session_id="sid-2"
     )
     conn.commit()
 
@@ -30,7 +30,7 @@ def test_delete_by_session_ids_empty_list_is_noop(tmp_path):
     initialize_schema(conn)
 
     imported_files_dao.upsert(
-        conn, source_path="/x.jsonl", mtime=1.0, size=10, session_id="sid-1"
+        conn, source_path="/x.jsonl", platform="codex_cli", mtime=1.0, size=10, session_id="sid-1"
     )
     conn.commit()
 
@@ -45,7 +45,7 @@ def test_delete_by_session_ids_handles_nonexistent_session_ids(tmp_path):
     initialize_schema(conn)
 
     imported_files_dao.upsert(
-        conn, source_path="/y.jsonl", mtime=1.0, size=10, session_id="sid-real"
+        conn, source_path="/y.jsonl", platform="codex_cli", mtime=1.0, size=10, session_id="sid-real"
     )
     conn.commit()
 
@@ -61,13 +61,13 @@ def test_delete_by_session_ids_deletes_multiple_sessions(tmp_path):
     initialize_schema(conn)
 
     imported_files_dao.upsert(
-        conn, source_path="/1.jsonl", mtime=1.0, size=1, session_id="a"
+        conn, source_path="/1.jsonl", platform="codex_cli", mtime=1.0, size=1, session_id="a"
     )
     imported_files_dao.upsert(
-        conn, source_path="/2.jsonl", mtime=2.0, size=2, session_id="a"
+        conn, source_path="/2.jsonl", platform="codex_cli", mtime=2.0, size=2, session_id="a"
     )
     imported_files_dao.upsert(
-        conn, source_path="/3.jsonl", mtime=3.0, size=3, session_id="b"
+        conn, source_path="/3.jsonl", platform="codex_cli", mtime=3.0, size=3, session_id="b"
     )
     conn.commit()
 
@@ -93,10 +93,10 @@ def test_delete_orphaned_removes_rows_with_missing_session(tmp_path):
 
     # Upsert two imported_files rows: one with a valid session_id, one orphan.
     imported_files_dao.upsert(
-        conn, source_path="/a/b.jsonl", mtime=1000.0, size=200, session_id="sid-1"
+        conn, source_path="/a/b.jsonl", platform="codex_cli", mtime=1000.0, size=200, session_id="sid-1"
     )
     imported_files_dao.upsert(
-        conn, source_path="/a/orphan.jsonl", mtime=2000.0, size=400, session_id="sid-orphan"
+        conn, source_path="/a/orphan.jsonl", platform="codex_cli", mtime=2000.0, size=400, session_id="sid-orphan"
     )
     conn.commit()
 
@@ -121,7 +121,7 @@ def test_delete_orphaned_returns_zero_when_no_orphans(tmp_path):
     conn.commit()
 
     imported_files_dao.upsert(
-        conn, source_path="/x.jsonl", mtime=1.0, size=10, session_id="sid-1"
+        conn, source_path="/x.jsonl", platform="codex_cli", mtime=1.0, size=10, session_id="sid-1"
     )
     conn.commit()
 
@@ -129,7 +129,44 @@ def test_delete_orphaned_returns_zero_when_no_orphans(tmp_path):
     conn.commit()
 
     assert count == 0
-    assert imported_files_dao.get(conn, "/x.jsonl") is not None
+
+
+def test_delete_orphaned_keeps_rows_without_session_id(tmp_path):
+    conn = open_connection(tmp_path / "test.sqlite")
+    initialize_schema(conn)
+
+    imported_files_dao.upsert(
+        conn,
+        source_path="/no-session.jsonl",
+        platform="claude_code",
+        mtime=1.0,
+        size=10,
+        session_id="",
+    )
+    conn.commit()
+
+    count = imported_files_dao.delete_orphaned(conn, platform="claude_code")
+    conn.commit()
+
+    assert count == 0
+    row = imported_files_dao.get(conn, "/no-session.jsonl", platform="claude_code")
+    assert row is not None
+
+
+def test_get_all_filters_by_platform(tmp_path):
+    conn = open_connection(tmp_path / "test.sqlite")
+    initialize_schema(conn)
+
+    imported_files_dao.upsert(
+        conn, source_path="/codex.jsonl", platform="codex_cli", mtime=1.0, size=10, session_id="sid-codex"
+    )
+    imported_files_dao.upsert(
+        conn, source_path="/claude.jsonl", platform="claude_code", mtime=2.0, size=20, session_id="sid-claude"
+    )
+    conn.commit()
+
+    assert set(imported_files_dao.get_all(conn, platform="codex_cli")) == {"/codex.jsonl"}
+    assert set(imported_files_dao.get_all(conn, platform="claude_code")) == {"/claude.jsonl"}
 
 
 def test_delete_orphaned_handles_empty_imported_files(tmp_path):

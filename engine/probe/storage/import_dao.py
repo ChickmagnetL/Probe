@@ -8,11 +8,12 @@ from typing import Any
 
 def insert(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
     conn.execute(
-        """INSERT OR IGNORE INTO imports (id, input_path, file_count, session_count, status)
-           VALUES (?, ?, ?, ?, ?)""",
+        """INSERT OR IGNORE INTO imports (id, input_path, platform, file_count, session_count, status)
+           VALUES (?, ?, ?, ?, ?, ?)""",
         (
             record["id"],
             record.get("input_path"),
+            record.get("platform", "codex_cli"),
             record.get("file_count", 0),
             record.get("session_count", 0),
             record.get("status", "completed"),
