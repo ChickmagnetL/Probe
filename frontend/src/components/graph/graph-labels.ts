@@ -64,7 +64,11 @@ export function eventTypeLabel(src: LabelSource): string {
   const sourcePayload = sourceRecord ? tryParseMeta(sourceRecord.payload) : null;
 
   const label =
-    strField(rawMeta, "payload_type")
+    // claude_code native identity takes precedence (claude_code events only;
+    // codex events have no claude_event_type and skip this line).
+    strField(rawMeta, "claude_event_type")
+    ?? strField(raw, "claude_event_type")
+    ?? strField(rawMeta, "payload_type")
     ?? strField(raw, "payload_type")
     ?? strField(raw, "record_type")
     ?? strField(sourceRecord, "payload_type")

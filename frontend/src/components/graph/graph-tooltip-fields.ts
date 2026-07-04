@@ -45,11 +45,19 @@ export function extractGraphTooltipFields(
   }
 
   const baseline: EventField[] = [];
-  const recordType = stringOrNull(meta.record_type);
-  const payloadType = stringOrNull(meta.payload_type) ?? stringOrNull(meta.event_type);
-
-  if (recordType) baseline.push({ key: "record_type", label: "Type", value: recordType });
-  if (payloadType) baseline.push({ key: "payload_type", label: "Payload Type", value: payloadType });
+  // claude_code events carry a native identity (``claude_event_type``); prepend
+  // it as the baseline so the tooltip always shows the identity first. codex
+  // events have no such field and fall through to the record_type / payload_type
+  // baseline unchanged.
+  const claudeEventType = stringOrNull(meta.claude_event_type);
+  if (claudeEventType) {
+    baseline.push({ key: "claude_event_type", label: "Identity", value: claudeEventType });
+  } else {
+    const recordType = stringOrNull(meta.record_type);
+    const payloadType = stringOrNull(meta.payload_type) ?? stringOrNull(meta.event_type);
+    if (recordType) baseline.push({ key: "record_type", label: "Type", value: recordType });
+    if (payloadType) baseline.push({ key: "payload_type", label: "Payload Type", value: payloadType });
+  }
 
   return [...baseline, ...withoutBaselineDuplicates(fields, baseline)].slice(0, 3);
 }

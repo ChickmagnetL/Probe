@@ -1,5 +1,6 @@
 import type { EventRow } from "../ipc/types";
 import { formatTime } from "./format";
+import { argsField, parseArgsObject } from "./event-fields";
 
 export interface EventMetadataCard {
   label: string;
@@ -218,11 +219,171 @@ function buildKeyFieldCard(event: EventLike, meta: EventMeta): KeyFieldCard | nu
   return null;
 }
 
+// ── claude_code native-identity cards ───────────────────
+
+// Friendly Identity card values for non-tool claude_event_types. Tool names
+// (Bash, Edit, mcp__*, ...) use the name verbatim; ``claudeIdentityLabel``
+// resolves the friendly form for system / attachment identities.
+const CLAUDE_IDENTITY_LABELS: Record<string, string> = {
+  tool_result: "Result",
+  text: "Text",
+  thinking: "Thinking",
+  user_message: "User",
+  api_error: "API Error",
+  compact_boundary: "Compact",
+  local_command: "Local Cmd",
+  hook: "Hook",
+  command_permissions: "Permissions",
+  edited_text_file: "File Edit",
+  skill_listing: "Skills",
+  task_reminder: "Task Reminder",
+  queue_operation: "Queued",
+  image: "Image",
+  subagent_session: "Subagent",
+};
+
+function claudeIdentityLabel(claudeEventType: string | null): string {
+  if (!claudeEventType) return "Event";
+  if (claudeEventType.startsWith("mcp__")) return "MCP";
+  return CLAUDE_IDENTITY_LABELS[claudeEventType] ?? claudeEventType;
+}
+
+function readUsageTotalTokens(usage: unknown): string | null {
+  const u = objectOrNull(usage);
+  if (!u) return null;
+  const total = numberOrNull(u.total_tokens);
+  return total !== null ? total.toLocaleString() : null;
+}
+
+function formatPrePostTokens(pre: unknown, post: unknown): string | null {
+  const preN = numberOrNull(pre);
+  const postN = numberOrNull(post);
+  if (preN === null && postN === null) return null;
+  return `${preN?.toLocaleString() ?? "?"} → ${postN?.toLocaleString() ?? "?"}`;
+}
+
+/** Build Identity / Primary / Secondary / Time cards for a claude_code event.
+ *  Dispatches on ``claude_event_type`` (the native identity). Tool_call inputs
+ *  live inside the stringified ``args`` JSON; ``argsField`` reads from either
+ *  args or direct metadata so the same case serves tool_call + tool_result. */
+function buildClaudeCodeCards(
+  event: EventLike,
+  parsed: Record<string, unknown>,
+): EventMetadataCard[] {
+  const claudeEventType = stringOrNull(parsed.claude_event_type);
+  const cards: EventMetadataCard[] = [
+    { label: "Identity", value: claudeIdentityLabel(claudeEventType) },
+  ];
+
+  const args = parseArgsObject(parsed);
+  const push = (label: string, value: string | null | undefined) => {
+    if (value) cards.push({ label, value });
+  };
+  const numeric = (v: unknown): string | null =>
+    typeof v === "number" ? String(v) : null;
+
+  switch (claudeEventType) {
+    case "Bash":
+      push("Command", argsField(parsed, args, "command"));
+      push("Exit Code", numeric(parsed.exit_code));
+      break;
+    case "Edit":
+      push("Path", argsField(parsed, args, "file_path"));
+      push("Status", stringOrNull(parsed.status));
+      break;
+    case "Write":
+      push("Path", argsField(parsed, args, "file_path"));
+      push("Status", stringOrNull(parsed.status));
+      break;
+    case "MultiEdit":
+      push("Path", argsField(parsed, args, "file_path"));
+      break;
+    case "Read":
+      push("Path", argsField(parsed, args, "file_path"));
+      break;
+    case "Grep":
+      push("Pattern", argsField(parsed, args, "pattern"));
+      break;
+    case "Glob":
+      push("Pattern", argsField(parsed, args, "pattern"));
+      break;
+    case "Agent":
+    case "Task":
+      push("Subagent", argsField(parsed, args, "subagent_type"));
+      push("Model", argsField(parsed, args, "model"));
+      break;
+    case "WebSearch":
+      push("Query", argsField(parsed, args, "query"));
+      break;
+    case "WebFetch":
+      push("URL", argsField(parsed, args, "url"));
+      break;
+    case "tool_result":
+      push("Status", stringOrNull(parsed.status));
+      push("Exit Code", numeric(parsed.exit_code));
+      push("Path", stringOrNull(parsed.file_path));
+      break;
+    case "text":
+      push("Model", stringOrNull(parsed.model));
+      push("Tokens", readUsageTotalTokens(parsed.usage));
+      break;
+    case "thinking":
+      push("Model", stringOrNull(parsed.model));
+      break;
+    case "api_error":
+      push("Error Type", stringOrNull(parsed.error_type));
+      push("Retry", numeric(parsed.retry_attempt));
+      break;
+    case "compact_boundary":
+      push("Tokens", formatPrePostTokens(parsed.original_token_count, parsed.compacted_token_count));
+      push("Trigger", stringOrNull(parsed.trigger));
+      break;
+    case "hook":
+      push("Name", stringOrNull(parsed.hook_name));
+      push("Exit Code", numeric(parsed.exit_code));
+      break;
+    case "edited_text_file":
+      push("Path", stringOrNull(parsed.filename) ?? stringOrNull(parsed.file_path));
+      break;
+    case "image":
+      push("Media Type", stringOrNull(parsed.media_type) ?? stringOrNull(parsed.detail_note));
+      break;
+    case "subagent_session":
+      push("Nickname", stringOrNull(parsed.agent_nickname));
+      push("Role", stringOrNull(parsed.agent_role));
+      break;
+    default:
+      // mcp__* tools (Identity "MCP"): surface Server + Tool name.
+      if (claudeEventType?.startsWith("mcp__")) {
+        push("Server", stringOrNull(parsed.server));
+        push("Tool", stringOrNull(parsed.tool_name) ?? claudeEventType);
+      }
+      // TodoWrite / command_permissions / skill_listing / task_reminder /
+      // queue_operation / local_command / user_message / unknown tool names:
+      // identity + Time is enough; tool_call args are shown in the content area.
+      break;
+  }
+
+  cards.push({
+    label: "Time",
+    value: event.timestamp ? formatTime(event.timestamp) : "-",
+  });
+  return cards;
+}
+
 export function buildEventMetadataCards({
   event,
 }: {
   event: EventLike;
 }): EventMetadataCard[] {
+  // claude_code events carry ``claude_event_type`` (native identity); codex
+  // events do not. Route claude_code to its own card builder so codex renders
+  // byte-for-byte unchanged.
+  const parsed = parseMetadata(event.metadata);
+  if (stringOrNull(parsed.claude_event_type)) {
+    return buildClaudeCodeCards(event, parsed);
+  }
+
   const meta = readMeta(event);
   const recordType = meta.record_type ?? syntheticRecordType(event);
   const payloadType = meta.payload_type ?? syntheticPayloadType(event);

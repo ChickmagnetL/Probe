@@ -60,6 +60,33 @@ function computeCommandString(meta: Record<string, unknown>): string | undefined
   return undefined;
 }
 
+/**
+ * Parse a claude_code tool_call's stringified ``args`` (JSON) into an object.
+ * Tool_call events carry the input fields (file_path/command/pattern/...) only
+ * inside ``args``; tool_result events carry them directly on metadata. Returning
+ * null lets callers fall back to direct metadata fields.
+ */
+export function parseArgsObject(meta: Record<string, unknown>): Record<string, unknown> | null {
+  const raw = meta.args;
+  if (typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function argsField(
+  meta: Record<string, unknown>,
+  args: Record<string, unknown> | null,
+  key: string,
+): string | null {
+  return stringOrNull(meta[key]) ?? stringOrNull(args?.[key]);
+}
+
 // ── Main extraction ────────────────────────────────────
 
 /**
@@ -73,12 +100,27 @@ export function extractFields(
   meta: Record<string, unknown>,
   kind: string,
 ): EventField[] {
-  // Determine event type: try event_type first, then payload_type, then kind as fallback
-  const eventType = (stringOrNull(meta.event_type)
+  // Determine event type. claude_code events carry ``claude_event_type`` (native
+  // identity); codex events do not, so they fall through to event_type /
+  // payload_type / kind unchanged.
+  const eventType = (stringOrNull(meta.claude_event_type)
+    ?? stringOrNull(meta.event_type)
     ?? stringOrNull(meta.payload_type)
     ?? kind) as string;
 
   const fields: EventField[] = [];
+
+  // claude_code MCP tool_call: identity is the raw ``mcp__<server>__<tool>`` name.
+  // Switch can't pattern-match a prefix, so handle it before the switch. The
+  // Identity baseline already shows the full name, so only surface Server (when
+  // the engine has split it) and the bare Tool name when it adds information.
+  if (eventType.startsWith("mcp__")) {
+    const server = stringOrNull(meta.server);
+    const toolName = stringOrNull(meta.tool_name) ?? stringOrNull(meta.name);
+    if (server) fields.push({ key: "server", label: "Server", value: server });
+    if (toolName && toolName !== eventType) fields.push({ key: "tool", label: "Tool", value: toolName });
+    return fields;
+  }
 
   switch (eventType) {
     // ── P0: Core ──────────────────────────────────────
@@ -322,6 +364,202 @@ export function extractFields(
 
       if (imagePath) fields.push({ key: "path", label: "Image", value: imagePath });
       if (detailNote) fields.push({ key: "type", label: "Type", value: detailNote });
+      break;
+    }
+
+    // ── claude_code native-identity cases ──────────────
+    // claude_code events dispatch on ``claude_event_type`` (resolved into
+    // ``eventType`` above). Tool_call inputs live inside the stringified
+    // ``args`` JSON; ``argsField`` reads a key from either args or meta so the
+    // same case serves tool_call (input in args) and tool_result (direct).
+    case "Bash": {
+      const args = parseArgsObject(meta);
+      const cmd = argsField(meta, args, "command");
+      const exitCode = meta.exit_code;
+      const status = stringOrNull(meta.status);
+      if (cmd) fields.push({ key: "cmd", label: "Command", value: cmd });
+      if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
+      if (status) fields.push({ key: "status", label: "Status", value: status });
+      break;
+    }
+
+    case "Edit": {
+      const args = parseArgsObject(meta);
+      const filePath = argsField(meta, args, "file_path");
+      const status = stringOrNull(meta.status);
+      if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
+      if (status) fields.push({ key: "status", label: "Status", value: status });
+      break;
+    }
+
+    case "Write": {
+      const args = parseArgsObject(meta);
+      const filePath = argsField(meta, args, "file_path");
+      const status = stringOrNull(meta.status);
+      if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
+      if (status) fields.push({ key: "status", label: "Status", value: status });
+      break;
+    }
+
+    case "MultiEdit": {
+      const args = parseArgsObject(meta);
+      const filePath = argsField(meta, args, "file_path");
+      const changes = meta.changes as unknown[] | undefined;
+      if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
+      if (changes) fields.push({ key: "changes", label: "Changes", value: `${changes.length} edits` });
+      break;
+    }
+
+    case "Read": {
+      const args = parseArgsObject(meta);
+      const filePath = argsField(meta, args, "file_path");
+      if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
+      break;
+    }
+
+    case "Grep": {
+      const args = parseArgsObject(meta);
+      const pattern = argsField(meta, args, "pattern");
+      const path = argsField(meta, args, "path");
+      if (pattern) fields.push({ key: "pattern", label: "Pattern", value: pattern });
+      if (path) fields.push({ key: "path", label: "Path", value: path });
+      break;
+    }
+
+    case "Glob": {
+      const args = parseArgsObject(meta);
+      const pattern = argsField(meta, args, "pattern");
+      if (pattern) fields.push({ key: "pattern", label: "Pattern", value: pattern });
+      break;
+    }
+
+    case "Agent":
+    case "Task": {
+      const args = parseArgsObject(meta);
+      const subagentType = argsField(meta, args, "subagent_type");
+      const model = argsField(meta, args, "model");
+      const description = argsField(meta, args, "description");
+      if (subagentType) fields.push({ key: "subagent", label: "Subagent", value: subagentType });
+      if (model) fields.push({ key: "model", label: "Model", value: model });
+      if (description) fields.push({ key: "desc", label: "Description", value: truncate(description, 120) });
+      break;
+    }
+
+    case "WebSearch": {
+      const args = parseArgsObject(meta);
+      const query = argsField(meta, args, "query");
+      if (query) fields.push({ key: "query", label: "Query", value: query });
+      break;
+    }
+
+    case "WebFetch": {
+      const args = parseArgsObject(meta);
+      const url = argsField(meta, args, "url");
+      if (url) fields.push({ key: "url", label: "URL", value: url });
+      break;
+    }
+
+    case "TodoWrite": {
+      const args = parseArgsObject(meta);
+      const todos = args?.todos as unknown[] | undefined;
+      if (todos) fields.push({ key: "todos", label: "Todos", value: String(todos.length) });
+      break;
+    }
+
+    case "tool_result": {
+      const status = stringOrNull(meta.status);
+      const filePath = stringOrNull(meta.file_path);
+      const exitCode = meta.exit_code;
+      if (typeof meta.is_error === "boolean") fields.push({ key: "err", label: "Error", value: String(meta.is_error) });
+      if (status) fields.push({ key: "status", label: "Status", value: status });
+      if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
+      if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
+      break;
+    }
+
+    case "text": {
+      const model = stringOrNull(meta.model);
+      const stopReason = stringOrNull(meta.stop_reason);
+      if (model) fields.push({ key: "model", label: "Model", value: model });
+      if (stopReason) fields.push({ key: "stop", label: "Stop Reason", value: stopReason });
+      break;
+    }
+
+    case "thinking": {
+      const model = stringOrNull(meta.model);
+      if (model) fields.push({ key: "model", label: "Model", value: model });
+      break;
+    }
+
+    case "api_error": {
+      const msg = stringOrNull(meta.message);
+      const errType = stringOrNull(meta.error_type);
+      const retryAttempt = meta.retry_attempt;
+      if (msg) fields.push({ key: "msg", label: "Message", value: msg });
+      if (errType) fields.push({ key: "type", label: "Type", value: errType });
+      if (typeof retryAttempt === "number") fields.push({ key: "retry", label: "Retry", value: String(retryAttempt) });
+      break;
+    }
+
+    case "compact_boundary": {
+      const preTokens = meta.original_token_count;
+      const postTokens = meta.compacted_token_count;
+      const trigger = stringOrNull(meta.trigger);
+      if (typeof preTokens === "number") fields.push({ key: "pre", label: "Pre Tokens", value: formatNumber(preTokens) });
+      if (typeof postTokens === "number") fields.push({ key: "post", label: "Post Tokens", value: formatNumber(postTokens) });
+      if (trigger) fields.push({ key: "trigger", label: "Trigger", value: trigger });
+      break;
+    }
+
+    case "hook": {
+      const hookName = stringOrNull(meta.hook_name);
+      const command = stringOrNull(meta.command);
+      const exitCode = meta.exit_code;
+      const durMs = meta.duration_ms as number | undefined;
+      if (hookName) fields.push({ key: "name", label: "Name", value: hookName });
+      if (command) fields.push({ key: "cmd", label: "Command", value: command });
+      if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
+      if (durMs !== undefined) fields.push({ key: "dur", label: "Duration", value: formatDuration(durMs) });
+      break;
+    }
+
+    case "edited_text_file": {
+      const filename = stringOrNull(meta.filename) ?? stringOrNull(meta.file_path);
+      if (filename) fields.push({ key: "path", label: "Path", value: filename });
+      break;
+    }
+
+    case "command_permissions": {
+      const allowed = meta.allowed_tools as unknown[] | undefined;
+      if (allowed) fields.push({ key: "allowed", label: "Allowed Tools", value: String(allowed.length) });
+      break;
+    }
+
+    case "skill_listing": {
+      const names = meta.names as unknown[] | undefined;
+      if (names) fields.push({ key: "skills", label: "Skills", value: String(names.length) });
+      break;
+    }
+
+    case "task_reminder": {
+      const todos = meta.todos as unknown[] | undefined;
+      if (todos) fields.push({ key: "todos", label: "Todos", value: String(todos.length) });
+      break;
+    }
+
+    case "image": {
+      const mediaType = stringOrNull(meta.media_type) ?? stringOrNull(meta.detail_note);
+      if (mediaType) fields.push({ key: "media", label: "Media Type", value: mediaType });
+      break;
+    }
+
+    case "queue_operation": {
+      // Content is rendered separately; no extra meta fields to surface.
+      break;
+    }
+
+    case "local_command": {
+      // Content is rendered separately; no extra meta fields to surface.
       break;
     }
 
