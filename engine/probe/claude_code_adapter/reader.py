@@ -6,6 +6,37 @@ from pathlib import Path
 from probe.path_utils import path_from_user_input
 
 
+_KNOWN_CLAUDE_RECORD_TYPES = frozenset(
+    {
+        "agent-color",
+        "agent-name",
+        "agent-setting",
+        "ai-title",
+        "assistant",
+        "attachment",
+        "attribution-snapshot",
+        "content-replacement",
+        "custom-title",
+        "file-history-snapshot",
+        "last-prompt",
+        "marble-origami-commit",
+        "marble-origami-snapshot",
+        "mode",
+        "permission-mode",
+        "pr-link",
+        "progress",
+        "queue-operation",
+        "speculation-accept",
+        "summary",
+        "system",
+        "tag",
+        "task-summary",
+        "user",
+        "worktree-state",
+    }
+)
+
+
 def is_claude_code_file(path: Path) -> bool:
     if not path.is_file() or path.suffix != ".jsonl":
         return False
@@ -91,17 +122,7 @@ def _probe_claude_jsonl(path: Path) -> bool:
                 record_type = data.get("type")
                 if not isinstance(record_type, str) or not record_type:
                     return False
-                if record_type in {
-                    "user",
-                    "assistant",
-                    "attachment",
-                    "system",
-                    "mode",
-                    "permission-mode",
-                    "ai-title",
-                    "file-history-snapshot",
-                    "last-prompt",
-                }:
+                if record_type in _KNOWN_CLAUDE_RECORD_TYPES:
                     return True
                 if isinstance(data.get("sessionId"), str) and (
                     isinstance(data.get("message"), dict)

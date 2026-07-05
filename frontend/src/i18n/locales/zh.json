@@ -86,6 +86,7 @@
   "detail": {
     "tokenUsage": "Token 用量",
     "lastCall": "最近调用",
+    "thisResponse": "本次响应",
     "sessionTotal": "会话总计",
     "input": "输入",
     "output": "输出",

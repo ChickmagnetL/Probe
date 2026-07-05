@@ -221,33 +221,6 @@ function buildKeyFieldCard(event: EventLike, meta: EventMeta): KeyFieldCard | nu
 
 // ── claude_code native-identity cards ───────────────────
 
-// Friendly Identity card values for non-tool claude_event_types. Tool names
-// (Bash, Edit, mcp__*, ...) use the name verbatim; ``claudeIdentityLabel``
-// resolves the friendly form for system / attachment identities.
-const CLAUDE_IDENTITY_LABELS: Record<string, string> = {
-  tool_result: "Result",
-  text: "Text",
-  thinking: "Thinking",
-  user_message: "User",
-  api_error: "API Error",
-  compact_boundary: "Compact",
-  local_command: "Local Cmd",
-  hook: "Hook",
-  command_permissions: "Permissions",
-  edited_text_file: "File Edit",
-  skill_listing: "Skills",
-  task_reminder: "Task Reminder",
-  queue_operation: "Queued",
-  image: "Image",
-  subagent_session: "Subagent",
-};
-
-function claudeIdentityLabel(claudeEventType: string | null): string {
-  if (!claudeEventType) return "Event";
-  if (claudeEventType.startsWith("mcp__")) return "MCP";
-  return CLAUDE_IDENTITY_LABELS[claudeEventType] ?? claudeEventType;
-}
-
 function readUsageTotalTokens(usage: unknown): string | null {
   const u = objectOrNull(usage);
   if (!u) return null;
@@ -262,7 +235,37 @@ function formatPrePostTokens(pre: unknown, post: unknown): string | null {
   return `${preN?.toLocaleString() ?? "?"} → ${postN?.toLocaleString() ?? "?"}`;
 }
 
-/** Build Identity / Primary / Secondary / Time cards for a claude_code event.
+function hasSourceContentBlockType(
+  sourceRecord: Record<string, unknown> | null,
+  blockType: string | null,
+): boolean {
+  if (!sourceRecord || !blockType) return false;
+  const message = objectOrNull(sourceRecord.message);
+  const content = message?.content;
+  return Array.isArray(content)
+    && content.some((item) => objectOrNull(item)?.type === blockType);
+}
+
+function sourceContentBlockString(
+  sourceRecord: Record<string, unknown> | null,
+  blockType: string | null,
+  field: string,
+): string | null {
+  if (!sourceRecord || !blockType) return null;
+  const message = objectOrNull(sourceRecord.message);
+  const content = message?.content;
+  if (!Array.isArray(content)) return null;
+  for (const item of content) {
+    const block = objectOrNull(item);
+    if (block?.type === blockType) {
+      const value = stringOrNull(block[field]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+/** Build source-layer / native-detail / timestamp cards for a claude_code event.
  *  Dispatches on ``claude_event_type`` (the native identity). Tool_call inputs
  *  live inside the stringified ``args`` JSON; ``argsField`` reads from either
  *  args or direct metadata so the same case serves tool_call + tool_result. */
@@ -271,9 +274,13 @@ function buildClaudeCodeCards(
   parsed: Record<string, unknown>,
 ): EventMetadataCard[] {
   const claudeEventType = stringOrNull(parsed.claude_event_type);
-  const cards: EventMetadataCard[] = [
-    { label: "Identity", value: claudeIdentityLabel(claudeEventType) },
-  ];
+  const sourceRecord = objectOrNull(parsed.source_record);
+  const recordType = stringOrNull(parsed.raw_record_type)
+    ?? stringOrNull(sourceRecord?.type);
+  const systemSubtype = stringOrNull(parsed.system_subtype);
+  const attachmentType = stringOrNull(parsed.attachment_type);
+  const blockType = stringOrNull(parsed.raw_content_type);
+  const cards: EventMetadataCard[] = [];
 
   const args = parseArgsObject(parsed);
   const push = (label: string, value: string | null | undefined) => {
@@ -281,91 +288,123 @@ function buildClaudeCodeCards(
   };
   const numeric = (v: unknown): string | null =>
     typeof v === "number" ? String(v) : null;
+  const toolIdentity = (): string | null => {
+    return stringOrNull(parsed.name)
+      ?? stringOrNull(parsed.tool_name)
+      ?? sourceContentBlockString(sourceRecord, blockType, "name");
+  };
+
+  if (recordType) {
+    push("type", recordType);
+  } else {
+    push("claude_event_type", claudeEventType);
+  }
+  push("subtype", systemSubtype);
+  push("attachment.type", attachmentType);
+  if (hasSourceContentBlockType(sourceRecord, blockType)) {
+    push("message.content[].type", blockType);
+  }
+  if (blockType === "tool_use") {
+    push("message.content[].name", toolIdentity());
+  }
+  if (blockType === "tool_result") {
+    push("message.content[].tool_use_id", stringOrNull(parsed.call_id)
+      ?? sourceContentBlockString(sourceRecord, blockType, "tool_use_id"));
+  }
 
   switch (claudeEventType) {
     case "Bash":
-      push("Command", argsField(parsed, args, "command"));
-      push("Exit Code", numeric(parsed.exit_code));
+      push("command", argsField(parsed, args, "command"));
+      push("exitCode", numeric(parsed.exit_code));
       break;
     case "Edit":
-      push("Path", argsField(parsed, args, "file_path"));
-      push("Status", stringOrNull(parsed.status));
+      push("file_path", argsField(parsed, args, "file_path"));
+      push("status", stringOrNull(parsed.status));
       break;
     case "Write":
-      push("Path", argsField(parsed, args, "file_path"));
-      push("Status", stringOrNull(parsed.status));
+      push("file_path", argsField(parsed, args, "file_path"));
+      push("status", stringOrNull(parsed.status));
       break;
     case "MultiEdit":
-      push("Path", argsField(parsed, args, "file_path"));
+      push("file_path", argsField(parsed, args, "file_path"));
       break;
     case "Read":
-      push("Path", argsField(parsed, args, "file_path"));
+      push("file_path", argsField(parsed, args, "file_path"));
       break;
     case "Grep":
-      push("Pattern", argsField(parsed, args, "pattern"));
+      push("pattern", argsField(parsed, args, "pattern"));
       break;
     case "Glob":
-      push("Pattern", argsField(parsed, args, "pattern"));
+      push("pattern", argsField(parsed, args, "pattern"));
       break;
     case "Agent":
     case "Task":
-      push("Subagent", argsField(parsed, args, "subagent_type"));
-      push("Model", argsField(parsed, args, "model"));
+      push("subagent_type", argsField(parsed, args, "subagent_type"));
+      push("model", argsField(parsed, args, "model"));
       break;
     case "WebSearch":
-      push("Query", argsField(parsed, args, "query"));
+      push("query", argsField(parsed, args, "query"));
       break;
     case "WebFetch":
-      push("URL", argsField(parsed, args, "url"));
+      push("url", argsField(parsed, args, "url"));
       break;
     case "tool_result":
-      push("Status", stringOrNull(parsed.status));
-      push("Exit Code", numeric(parsed.exit_code));
-      push("Path", stringOrNull(parsed.file_path));
+      push("status", stringOrNull(parsed.status));
+      push("exitCode", numeric(parsed.exit_code));
+      push("file_path", stringOrNull(parsed.file_path));
       break;
     case "text":
-      push("Model", stringOrNull(parsed.model));
-      push("Tokens", readUsageTotalTokens(parsed.usage));
+      push("model", stringOrNull(parsed.model));
+      push("usage.total_tokens", readUsageTotalTokens(parsed.usage));
       break;
     case "thinking":
-      push("Model", stringOrNull(parsed.model));
+      push("model", stringOrNull(parsed.model));
       break;
     case "api_error":
-      push("Error Type", stringOrNull(parsed.error_type));
-      push("Retry", numeric(parsed.retry_attempt));
+      push("error.kind", stringOrNull(parsed.error_type));
+      push("retryAttempt", numeric(parsed.retry_attempt));
       break;
     case "compact_boundary":
-      push("Tokens", formatPrePostTokens(parsed.original_token_count, parsed.compacted_token_count));
-      push("Trigger", stringOrNull(parsed.trigger));
+      push("compactMetadata.preTokens/postTokens", formatPrePostTokens(parsed.original_token_count, parsed.compacted_token_count));
+      push("compactMetadata.trigger", stringOrNull(parsed.trigger));
+      break;
+    case "stop_hook_summary":
+      push("stopReason", stringOrNull(parsed.stop_reason));
+      push("hookCount", numeric(parsed.hook_count));
+      push("durationMs", formatDurationMs(numberOrNull(parsed.duration_ms)));
       break;
     case "hook":
-      push("Name", stringOrNull(parsed.hook_name));
-      push("Exit Code", numeric(parsed.exit_code));
+      push("hookName", stringOrNull(parsed.hook_name));
+      push("status", stringOrNull(parsed.status));
+      push("decision", stringOrNull(parsed.decision));
+      push("exitCode", numeric(parsed.exit_code));
       break;
     case "edited_text_file":
-      push("Path", stringOrNull(parsed.filename) ?? stringOrNull(parsed.file_path));
+      push("file_path", stringOrNull(parsed.filename) ?? stringOrNull(parsed.file_path));
       break;
     case "image":
-      push("Media Type", stringOrNull(parsed.media_type) ?? stringOrNull(parsed.detail_note));
+      push("message.content[].source.media_type", stringOrNull(parsed.media_type) ?? stringOrNull(parsed.detail_note));
       break;
     case "subagent_session":
-      push("Nickname", stringOrNull(parsed.agent_nickname));
-      push("Role", stringOrNull(parsed.agent_role));
+      push("agent_nickname", stringOrNull(parsed.agent_nickname));
+      push("agent_role", stringOrNull(parsed.agent_role));
       break;
     default:
-      // mcp__* tools (Identity "MCP"): surface Server + Tool name.
+      // mcp__* results may only have normalized metadata for split server/tool.
       if (claudeEventType?.startsWith("mcp__")) {
-        push("Server", stringOrNull(parsed.server));
-        push("Tool", stringOrNull(parsed.tool_name) ?? claudeEventType);
+        push("server", stringOrNull(parsed.server));
+        if (blockType !== "tool_use") {
+          push("tool_name", stringOrNull(parsed.tool_name) ?? claudeEventType);
+        }
       }
       // TodoWrite / command_permissions / skill_listing / task_reminder /
       // queue_operation / local_command / user_message / unknown tool names:
-      // identity + Time is enough; tool_call args are shown in the content area.
+      // source-layer cards + timestamp are enough; tool_call args are shown in the content area.
       break;
   }
 
   cards.push({
-    label: "Time",
+    label: "timestamp",
     value: event.timestamp ? formatTime(event.timestamp) : "-",
   });
   return cards;

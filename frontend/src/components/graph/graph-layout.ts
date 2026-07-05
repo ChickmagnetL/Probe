@@ -46,6 +46,7 @@ export interface GraphData {
 
 export interface GraphTurn {
   turn_id: string;
+  pre_input_details?: TurnEvent[];
   input: TurnEvent | null;
   input_details: TurnEvent[];
   output: TurnEvent | null;
@@ -188,24 +189,40 @@ export function buildGraphFromTurns(
   if (childSessions) indexSessions(childSessions);
 
   let currentY = startY;
-  let lastAnchorId: string | null = null;
+  let lastTimelineEventId: string | null = null;
+
+  const pushPrimaryLink = (source: string | null, target: string | null) => {
+    if (!source || !target || source === target) return;
+    links.push({ source, target, type: "primary" });
+  };
 
   for (const turn of turns) {
     const result = layoutTurn(turn, startX, currentY, sessionMap, sessionId, hiddenKinds);
     const mainSpindle = result.spindles[0];
-    // Link previous turn's anchor to this turn's first main-spine anchor.
-    if (lastAnchorId && mainSpindle) {
-      const target = firstMainAnchor(mainSpindle);
-      if (target) {
-        links.push({ source: lastAnchorId, target: target.event.event_id, type: "primary" });
+    if (mainSpindle) {
+      const firstAnchor = firstMainAnchor(mainSpindle);
+      if (firstAnchor) {
+        // Link the prior main-line event to this turn's first main-spine anchor.
+        pushPrimaryLink(lastTimelineEventId, firstAnchor.event.event_id);
+
+        // Update to this turn's last anchor (output preferred, else input).
+        const lastAnchor = lastMainAnchor(mainSpindle);
+        lastTimelineEventId = lastAnchor?.event.event_id ?? firstAnchor.event.event_id;
+      } else if (mainSpindle.events.length > 0) {
+        // Interstitial hook/system/tool-only turns have no user/assistant anchor.
+        // Chain their visible events into the main line so they do not float
+        // disconnected from the surrounding conversation.
+        const firstEventId = mainSpindle.events[0].event.event_id;
+        pushPrimaryLink(lastTimelineEventId, firstEventId);
+        for (let i = 1; i < mainSpindle.events.length; i++) {
+          pushPrimaryLink(
+            mainSpindle.events[i - 1].event.event_id,
+            mainSpindle.events[i].event.event_id,
+          );
+        }
+        lastTimelineEventId = mainSpindle.events[mainSpindle.events.length - 1].event.event_id;
       }
     }
-    // Update lastAnchorId to this turn's last anchor (output preferred, else input)
-    const lastPos = mainSpindle ? lastMainAnchor(mainSpindle) : null;
-    if (lastPos) {
-      lastAnchorId = lastPos.event.event_id;
-    }
-    // If the turn has no main anchor, keep lastAnchorId from previous turn.
     nodes.push(...result.nodes);
     links.push(...result.links);
     spindles.push(...result.spindles);
@@ -371,20 +388,22 @@ export function buildGraphFromTurns(
 // ── Event Collection ────────────────────────────────────
 
 /**
- * Merge input / input_details / output / output_details into a single
+ * Merge pre_input_details / input / input_details / output / output_details into a single
  * time-sorted TurnEvent[] per R0.
  *
- * - input is always events[0] (if present)
+ * - pre_input_details can appear before the input anchor for startup context
  * - output is always events[N-1] (if present)
  * - middle events sorted by source_line_no then timestamp
  */
 function collectTurnEvents(turn: GraphTurn): TurnEvent[] {
+  const preInput = [...(turn.pre_input_details ?? [])].sort(detailSort);
   const middle = mergeToolPairs([
     ...(turn.input_details ?? []),
     ...(turn.output_details ?? []),
   ].sort(detailSort));
 
   const events: TurnEvent[] = [];
+  events.push(...preInput);
   if (turn.input) events.push(turn.input);
   events.push(...middle);
   if (turn.output) events.push(turn.output);
@@ -505,8 +524,8 @@ function layoutTurn(
     ? Math.max(...eventPositions.map((p) => p.y))
     : eventTop;
   const anchorPositions = eventPositions.filter((pos) => pos.isAnchor);
-  const spineTop = anchorPositions[0]?.y ?? eventTop;
-  const spineBottom = anchorPositions[anchorPositions.length - 1]?.y ?? spineTop;
+  const spineTop = eventPositions[0]?.y ?? eventTop;
+  const spineBottom = anchorPositions[anchorPositions.length - 1]?.y ?? eventBottom;
 
   // Create nodes for each event
   const totalSubagentsForNodes = countSubagentSessions(visibleEvents);
@@ -905,6 +924,7 @@ export interface RawEvent {
   role?: string | null;
   timestamp?: string | null;
   content?: string | null;
+  content_preview?: string | null;
   source_line_no?: number | null;
   metadata?: string | Record<string, unknown> | null;
 }
@@ -926,21 +946,26 @@ export function buildTurnsFromEvents(events: RawEvent[]): GraphTurn[] {
   const turns: GraphTurn[] = [];
   let pendingUser: RawEvent[] = [];
   let pendingAssistant: RawEvent[] = [];
+  let pendingPreInput: RawEvent[] = [];
+  let hasMainUserInput = false;
 
   function flush() {
-    if (pendingUser.length === 0 && pendingAssistant.length === 0) return;
+    if (pendingPreInput.length === 0 && pendingUser.length === 0 && pendingAssistant.length === 0) return;
 
+    const preInputDetails = pendingPreInput.map(toTurnEvent);
     const [inputAnchor, inputDetails] = resolveInput(pendingUser);
     const [outputAnchor, outputDetails] = resolveOutput(pendingAssistant);
     const turnId = inputAnchor?.event_id || outputAnchor?.event_id || `turn:${turns.length + 1}`;
 
     turns.push({
       turn_id: `graph-turn:${turnId}`,
+      ...(preInputDetails.length > 0 ? { pre_input_details: preInputDetails } : {}),
       input: inputAnchor,
       input_details: inputDetails,
       output: outputAnchor,
       output_details: outputDetails,
     });
+    pendingPreInput = [];
     pendingUser = [];
     pendingAssistant = [];
   }
@@ -959,8 +984,18 @@ export function buildTurnsFromEvents(events: RawEvent[]): GraphTurn[] {
 
   for (const ev of sorted) {
     if (USER_SIDE_KINDS.has(ev.kind)) {
-      if (pendingAssistant.length > 0) flush();
+      if (pendingAssistant.length > 0) {
+        if (!hasMainUserInput && !hasAssistantOutput(pendingAssistant)) {
+          pendingPreInput.push(...pendingAssistant);
+          pendingAssistant = [];
+        } else {
+          flush();
+        }
+      }
       pendingUser.push(ev);
+      if (isMainUserInput(ev)) {
+        hasMainUserInput = true;
+      }
     } else {
       pendingAssistant.push(ev);
     }
@@ -1009,6 +1044,14 @@ function looksLikeAux(ev: RawEvent): boolean {
   return AUX_INPUT_PREFIXES.some((p) => text.startsWith(p));
 }
 
+function isMainUserInput(ev: RawEvent): boolean {
+  return ev.kind === "user_input" && !looksLikeAux(ev);
+}
+
+function hasAssistantOutput(events: RawEvent[]): boolean {
+  return events.some((event) => event.kind === "assistant_output");
+}
+
 function shouldHideGraphEvent(ev: RawEvent): boolean {
   const rawMeta = typeof ev.metadata === "string"
     ? (() => { try { return JSON.parse(ev.metadata); } catch { return null; } })()
@@ -1033,7 +1076,7 @@ function toTurnEvent(ev: RawEvent): TurnEvent {
     event_id: ev.id,
     kind: ev.kind,
     title: eventTypeLabel(ev),
-    summary: (ev as any).content_preview?.slice(0, 80) ?? ev.content?.slice(0, 80) ?? ev.kind,
+    summary: ev.content_preview?.slice(0, 80) ?? ev.content?.slice(0, 80) ?? ev.kind,
     child_session_id: childSessionId,
     timestamp: ev.timestamp ?? undefined,
     source_line_no: ev.source_line_no ?? undefined,
@@ -1041,7 +1084,7 @@ function toTurnEvent(ev: RawEvent): TurnEvent {
       timestamp: ev.timestamp,
       source_line_no: ev.source_line_no,
       role: ev.role,
-      content_preview: (ev as any).content_preview ?? ev.content?.slice(0, 200),
+      content_preview: ev.content_preview ?? ev.content?.slice(0, 200),
       ...(rawMeta ? rawMeta : {}),
     },
   };

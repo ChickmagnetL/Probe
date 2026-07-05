@@ -116,10 +116,11 @@
 ### 卡片展示策略
 
 ```
-卡片 1: Record Type   ← 顶层 type
-卡片 2: Subtype       ← system.subtype（仅 system 行）；否则 attachment.attachment.type
-卡片 3: 关键标识字段   ← 按下表映射（user/assistant 走 message.content[] block 路径）
-卡片 N: Time          ← timestamp
+卡片 1: type                         ← 顶层 type
+卡片 2: subtype / attachment.type     ← system.subtype 或 attachment.type
+卡片 3: message.content[].type        ← user/assistant 的 content block 判别字段
+卡片 4: message.content[].name        ← tool_use block 的工具名
+卡片 N: timestamp                    ← timestamp
 ```
 
 ### 嵌套深度统计
@@ -229,7 +230,8 @@ AI 生成的会话标题。每文件 ≤1 条。
 - **样本已确认 `attachment.type`**: `hook_success`、`skill_listing`。
 - **Hook 相关判别值（共 8 个，见下文 Hooks 记录路径章节）**: `hook_success`、`hook_non_blocking_error`、`hook_blocking_error`、`hook_cancelled`、`hook_additional_context`、`hook_permission_decision`、`hook_stopped_continuation`、`hook_system_message`。
 - **UI 展示**:
-  - `hook_success` / `hook_additional_context` → 可见 `system_event`，`claude_event_type=hook`，携带 `hookName`/`command`/`exitCode`/`durationMs`/`stdout`。
+  - hook 执行结果、权限、阻断、取消、停止续写、`hook_additional_context` 以及 SessionStart workflow/session-context hook → 可见 `system_event`，`claude_event_type=hook`，携带 `hookName`/`hookEvent`/`command`/`exitCode`/`durationMs`/`stdout`/`decision`/`message` 等可用字段。
+  - 如果这些可见 hook 出现在首个 user anchor 之前，或形成没有 `user_input`/`assistant_output` 锚点的 metadata turn，前端 graph layout 负责把它们按源顺序接入主时间线，而不是在 parser 中按 workflow 名称或上下文内容隐藏。
   - 其余（`skill_listing` 等）→ 隐藏元数据，`claude_event_type` 设为 `attachment.type` 原值。
 
 ### queue-operation
@@ -471,7 +473,7 @@ Hooks **没有自己的顶层 `type`**。共有两条记录路径：
 | `hook_non_blocking_error` | `HookResultAttachment` | hook 出错但不阻断 |
 | `hook_blocking_error` | `HookResultAttachment` | hook 出错并阻断 |
 | `hook_cancelled` | `HookResultAttachment` | hook 被取消 |
-| `hook_additional_context` | 富变体 → `content`（数组） | hook 注入额外上下文 |
+| `hook_additional_context` | 富变体 → `content`（数组） | hook 注入额外上下文；SessionStart Trellis/session context payload 仍作为可见 hook 事件保留，图中并入首个主 user turn 的正常 spine/folder 布局 |
 | `hook_permission_decision` | 富变体 → `decision` | hook 决定权限 |
 | `hook_stopped_continuation` | 富变体 → `message` | hook 阻止继续 |
 | `hook_system_message` | 富变体 → `content`（字符串） | hook 输出系统消息 |

@@ -41,6 +41,12 @@ def _copy_tree(src: Path, dest: Path) -> None:
         shutil.copy2(source_path, target_path)
 
 
+def _write_jsonl(path: Path, rows: list[dict]) -> list[str]:
+    lines = [json.dumps(row, ensure_ascii=False) for row in rows]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return lines
+
+
 @pytest.fixture
 def db(monkeypatch: pytest.MonkeyPatch, tmp_path):
     conn = open_connection(tmp_path / "probe.sqlite")
@@ -1181,6 +1187,8 @@ def test_hook_success_attachment_promotes_to_hook_identity() -> None:
     event = hooks[0]
     assert event["kind"] == "system_event"
     assert "event_type" not in event
+    assert event.get("graph_hidden") is not True
+    assert event["attachment_type"] == "hook_success"
     assert event["hook_name"] == "SessionStart:clear"
     # hookEvent -> hook_type (frontend "Type" field).
     assert event["hook_type"] == "SessionStart"
@@ -1188,6 +1196,117 @@ def test_hook_success_attachment_promotes_to_hook_identity() -> None:
     assert event["exit_code"] == 0
     assert event["duration_ms"] == 710
     assert "Loaded trellis context." in event["stdout"]
+
+
+def test_session_context_hooks_stay_visible_with_native_details(tmp_path) -> None:
+    """SessionStart context hooks stay visible like other hook attachments.
+
+    Real latest Claude rows emit both a ``hook_success`` whose stdout JSON
+    carries ``hookSpecificOutput`` context and a paired
+    ``hook_additional_context`` row. They should not be hidden; graph layout
+    connects their no-anchor startup turn into the following user anchor.
+    """
+    fixture = tmp_path / "session-context-hook.jsonl"
+    context_text = (
+        "<session-context>\n"
+        "Trellis compact SessionStart context.\n"
+        "Known metadata for the model."
+    )
+    stdout_payload = {
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": context_text,
+        },
+        "additional_context": context_text,
+    }
+    rows: list[dict] = [
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_success",
+                "hookName": "SessionStart:startup",
+                "hookEvent": "SessionStart",
+                "command": "python3 .claude/hooks/session-start.py",
+                "content": "",
+                "stdout": json.dumps(stdout_payload),
+                "stderr": "",
+                "exitCode": 0,
+                "durationMs": 710,
+            },
+            "timestamp": "2026-07-05T10:04:00.000Z",
+            "sessionId": "session-context-hook-session",
+        },
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_additional_context",
+                "hookName": "SessionStart",
+                "hookEvent": "SessionStart",
+                "content": [context_text],
+            },
+            "timestamp": "2026-07-05T10:04:01.000Z",
+            "sessionId": "session-context-hook-session",
+        },
+        {
+            "parentUuid": None,
+            "isSidechain": False,
+            "type": "user",
+            "message": {"role": "user", "content": "Start the task."},
+            "uuid": "u1",
+            "timestamp": "2026-07-05T10:04:02.000Z",
+            "sessionId": "session-context-hook-session",
+        },
+    ]
+    lines = _write_jsonl(fixture, rows)
+
+    result = parse_claude_code(str(fixture))
+
+    assert result["unknown_record_count"] == 0
+    assert result["unknown_route_keys"] == []
+    events = result["sessions"][0]["events"]
+    success_events = [
+        event for event in events
+        if event.get("attachment_type") == "hook_success"
+    ]
+    assert len(success_events) == 1
+    success_event = success_events[0]
+    assert success_event["kind"] == "system_event"
+    assert success_event["phase"] == "system"
+    assert success_event.get("graph_hidden") is not True
+    assert success_event["claude_event_type"] == "hook"
+    assert success_event["raw_content_type"] == "attachment"
+    assert success_event["hook_name"] == "SessionStart:startup"
+    assert success_event["hook_type"] == "SessionStart"
+    assert success_event["command"] == "python3 .claude/hooks/session-start.py"
+    assert success_event["exit_code"] == 0
+    assert success_event["duration_ms"] == 710
+    assert success_event["content"] == "SessionStart:startup"
+    assert "Trellis compact SessionStart context" in success_event["stdout"]
+    assert success_event["source_record"] == rows[0]
+    assert success_event["source_raw_text"] == lines[0]
+
+    context_events = [
+        event for event in events
+        if event.get("attachment_type") == "hook_additional_context"
+    ]
+    assert len(context_events) == 1
+    context_event = context_events[0]
+    assert context_event["kind"] == "system_event"
+    assert context_event["phase"] == "system"
+    assert context_event.get("graph_hidden") is not True
+    assert context_event["claude_event_type"] == "hook"
+    assert context_event["raw_content_type"] == "attachment"
+    assert context_event["hook_type"] == "SessionStart"
+    assert context_event["content"] == "SessionStart"
+    assert "Trellis compact SessionStart context" in context_event["message"]
+    assert context_event["source_record"] == rows[1]
+    assert context_event["source_raw_text"] == lines[1]
+
+    visible_hooks = [
+        event for event in events
+        if event.get("claude_event_type") == "hook" and event.get("graph_hidden") is not True
+    ]
+    assert len(visible_hooks) == 2
 
 
 @pytest.mark.skipif(not _has_claude_samples(), reason="samples/claude-code not available")
@@ -1277,7 +1396,7 @@ def test_user_image_block_emits_image_event() -> None:
 @pytest.mark.skipif(not _has_claude_samples(), reason="samples/claude-code not available")
 def test_system_events_fixture_has_no_unknown_records() -> None:
     """After Batch 5, every record kind in the system-events-parity fixture
-    routes cleanly: api_error -> error, hook_success -> hook_completed,
+    routes cleanly: api_error -> api_error, hook_success -> hook,
     queue-operation -> user_input, ai-title/agent-name/mode/permission-mode ->
     hidden metadata. unknown_route_keys must be empty.
     """
@@ -1285,6 +1404,299 @@ def test_system_events_fixture_has_no_unknown_records() -> None:
     result = parse_claude_code(str(fixture))
     assert result["unknown_record_count"] == 0
     assert result["unknown_route_keys"] == []
+
+
+def test_claude_file_beginning_with_summary_is_recognized_and_parses(tmp_path) -> None:
+    """A `type=summary` first row is a Claude Code metadata row, not unknown
+    and not a user prompt. Its raw JSONL line is preserved for Show Detail.
+    """
+    fixture = tmp_path / "summary-first.jsonl"
+    lines = _write_jsonl(
+        fixture,
+        [
+            {
+                "type": "summary",
+                "leafUuid": "leaf-123",
+                "summary": "Previous compacted conversation",
+                "sessionId": "summary-first-session",
+            },
+            {
+                "parentUuid": None,
+                "isSidechain": False,
+                "type": "user",
+                "message": {"role": "user", "content": "Continue the work."},
+                "uuid": "u1",
+                "timestamp": "2026-07-05T10:00:00.000Z",
+                "sessionId": "summary-first-session",
+            },
+        ],
+    )
+
+    assert is_claude_code_file(fixture)
+    result = parse_claude_code(str(fixture))
+
+    assert result["parse_errors"] == 0
+    assert result["unknown_record_count"] == 0
+    assert result["unknown_route_keys"] == []
+    events = result["sessions"][0]["events"]
+    summary = next(event for event in events if event["raw_record_type"] == "summary")
+    assert summary["kind"] == "system_event"
+    assert summary["graph_hidden"] is True
+    assert summary["claude_event_type"] == "summary"
+    assert summary["leaf_uuid"] == "leaf-123"
+    assert summary["summary"] == "Previous compacted conversation"
+    assert summary["source_raw_text"] == lines[0]
+    assert not [
+        event for event in events
+        if event["kind"] == "user_input" and event["content"] == "Previous compacted conversation"
+    ]
+
+
+def test_is_compact_summary_user_row_is_not_user_prompt(tmp_path) -> None:
+    """`user` rows with isCompactSummary=true carry compaction context and
+    must not render as ordinary user_input events or unknown routes.
+    """
+    fixture = tmp_path / "compact-summary-user.jsonl"
+    _write_jsonl(
+        fixture,
+        [
+            {
+                "parentUuid": "a1",
+                "isSidechain": False,
+                "type": "user",
+                "isCompactSummary": True,
+                "message": {"role": "user", "content": "Condensed prior context."},
+                "uuid": "u-compact",
+                "timestamp": "2026-07-05T10:01:00.000Z",
+                "sessionId": "compact-summary-session",
+            }
+        ],
+    )
+
+    result = parse_claude_code(str(fixture))
+
+    assert result["parse_errors"] == 0
+    assert result["unknown_record_count"] == 0
+    events = result["sessions"][0]["events"]
+    assert not [event for event in events if event["kind"] == "user_input"]
+    compact_summary = events[0]
+    assert compact_summary["kind"] == "compaction_event"
+    assert compact_summary["graph_hidden"] is True
+    assert compact_summary["claude_event_type"] == "compact_summary"
+    assert compact_summary["summary"] == "Condensed prior context."
+
+
+def test_microcompact_boundary_routes_as_compaction_event(tmp_path) -> None:
+    fixture = tmp_path / "microcompact.jsonl"
+    _write_jsonl(
+        fixture,
+        [
+            {
+                "parentUuid": "a1",
+                "logicalParentUuid": "a1",
+                "uuid": "mc1",
+                "type": "system",
+                "subtype": "microcompact_boundary",
+                "content": "Microcompact completed",
+                "compactMetadata": {
+                    "preTokens": 12000,
+                    "postTokens": 8000,
+                    "trigger": "automatic",
+                },
+                "timestamp": "2026-07-05T10:02:00.000Z",
+                "sessionId": "microcompact-session",
+            }
+        ],
+    )
+
+    result = parse_claude_code(str(fixture))
+
+    assert result["unknown_record_count"] == 0
+    event = result["sessions"][0]["events"][0]
+    assert event["kind"] == "compaction_event"
+    assert event["claude_event_type"] == "compact_boundary"
+    assert event["system_subtype"] == "microcompact_boundary"
+    assert event["original_token_count"] == 12000
+    assert event["compacted_token_count"] == 8000
+    assert event["trigger"] == "automatic"
+
+
+def test_stop_hook_summary_and_hook_callback_are_known_system_subtypes(tmp_path) -> None:
+    fixture = tmp_path / "stop-hook-summary.jsonl"
+    _write_jsonl(
+        fixture,
+        [
+            {
+                "type": "system",
+                "subtype": "stop_hook_summary",
+                "hookCount": 2,
+                "hookInfos": [{"command": "python hook.py", "durationMs": 44}],
+                "hookErrors": ["blocked"],
+                "preventedContinuation": True,
+                "stopReason": "hook_blocking_error",
+                "hasOutput": True,
+                "toolUseID": "tool-1",
+                "durationMs": 55,
+                "messageCount": 1,
+                "timestamp": "2026-07-05T10:03:00.000Z",
+                "sessionId": "stop-hook-session",
+            },
+            {
+                "type": "system",
+                "subtype": "hook_callback",
+                "content": "internal callback",
+                "timestamp": "2026-07-05T10:03:01.000Z",
+                "sessionId": "stop-hook-session",
+            },
+        ],
+    )
+
+    result = parse_claude_code(str(fixture))
+
+    assert result["unknown_record_count"] == 0
+    assert result["unknown_route_keys"] == []
+    events = result["sessions"][0]["events"]
+    summary = next(event for event in events if event["system_subtype"] == "stop_hook_summary")
+    assert summary["kind"] == "system_event"
+    assert summary["graph_hidden"] is False
+    assert summary["claude_event_type"] == "stop_hook_summary"
+    assert summary["hook_count"] == 2
+    assert summary["prevented_continuation"] is True
+    assert summary["stop_reason"] == "hook_blocking_error"
+    assert summary["duration_ms"] == 55
+    callback = next(event for event in events if event["system_subtype"] == "hook_callback")
+    assert callback["graph_hidden"] is True
+    assert callback["claude_event_type"] == "hook_callback"
+
+
+def test_all_taxonomy_hook_attachment_types_route_without_unknowns(tmp_path) -> None:
+    fixture = tmp_path / "hook-attachments.jsonl"
+    hook_rows = [
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_success",
+                "hookName": "success-hook",
+                "hookEvent": "PostToolUse",
+                "toolUseID": "tool-1",
+                "command": "echo ok",
+                "stdout": "ok",
+                "exitCode": 0,
+                "durationMs": 10,
+            },
+            "timestamp": "2026-07-05T10:04:00.000Z",
+            "sessionId": "hook-attachment-session",
+        },
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_non_blocking_error",
+                "hookName": "warn-hook",
+                "hookEvent": "PostToolUse",
+                "stderr": "warning",
+                "exitCode": 1,
+                "durationMs": 11,
+            },
+            "timestamp": "2026-07-05T10:04:01.000Z",
+            "sessionId": "hook-attachment-session",
+        },
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_blocking_error",
+                "hookName": "block-hook",
+                "hookEvent": "PostToolUse",
+                "blockingError": "blocked by policy",
+                "exitCode": 2,
+            },
+            "timestamp": "2026-07-05T10:04:02.000Z",
+            "sessionId": "hook-attachment-session",
+        },
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_cancelled",
+                "hookName": "cancel-hook",
+                "hookEvent": "Stop",
+                "content": "cancelled",
+            },
+            "timestamp": "2026-07-05T10:04:03.000Z",
+            "sessionId": "hook-attachment-session",
+        },
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_additional_context",
+                "hookName": "context-hook",
+                "hookEvent": "SessionStart",
+                "content": [{"type": "text", "text": "extra context"}],
+            },
+            "timestamp": "2026-07-05T10:04:04.000Z",
+            "sessionId": "hook-attachment-session",
+        },
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_permission_decision",
+                "hookName": "permission-hook",
+                "hookEvent": "PreToolUse",
+                "decision": "allow",
+            },
+            "timestamp": "2026-07-05T10:04:05.000Z",
+            "sessionId": "hook-attachment-session",
+        },
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_stopped_continuation",
+                "hookName": "stop-hook",
+                "hookEvent": "Stop",
+                "message": "Stopped continuation",
+            },
+            "timestamp": "2026-07-05T10:04:06.000Z",
+            "sessionId": "hook-attachment-session",
+        },
+        {
+            "type": "attachment",
+            "attachment": {
+                "type": "hook_system_message",
+                "hookName": "system-hook",
+                "hookEvent": "Notification",
+                "content": "System message",
+            },
+            "timestamp": "2026-07-05T10:04:07.000Z",
+            "sessionId": "hook-attachment-session",
+        },
+    ]
+    _write_jsonl(fixture, hook_rows)
+
+    result = parse_claude_code(str(fixture))
+
+    assert result["unknown_record_count"] == 0
+    assert result["unknown_route_keys"] == []
+    events = result["sessions"][0]["events"]
+    hooks = [event for event in events if event.get("claude_event_type") == "hook"]
+    assert len(hooks) == len(hook_rows)
+    statuses = {event["attachment_type"]: event["status"] for event in hooks}
+    assert statuses == {
+        "hook_success": "success",
+        "hook_non_blocking_error": "non_blocking_error",
+        "hook_blocking_error": "blocking_error",
+        "hook_cancelled": "cancelled",
+        "hook_additional_context": "additional_context",
+        "hook_permission_decision": "permission_decision",
+        "hook_stopped_continuation": "stopped_continuation",
+        "hook_system_message": "system_message",
+    }
+    permission = next(event for event in hooks if event["attachment_type"] == "hook_permission_decision")
+    assert permission["decision"] == "allow"
+    additional_context = next(event for event in hooks if event["attachment_type"] == "hook_additional_context")
+    assert additional_context.get("graph_hidden") is not True
+    assert additional_context["message"] == "extra context"
+    stopped = next(event for event in hooks if event["attachment_type"] == "hook_stopped_continuation")
+    assert stopped["message"] == "Stopped continuation"
+    blocking = next(event for event in hooks if event["attachment_type"] == "hook_blocking_error")
+    assert blocking["message"] == "blocked by policy"
 
 
 @pytest.mark.skipif(not _has_claude_samples(), reason="samples/claude-code not available")

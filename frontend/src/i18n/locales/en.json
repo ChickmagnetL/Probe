@@ -86,6 +86,7 @@
   "detail": {
     "tokenUsage": "Token Usage",
     "lastCall": "Last Call",
+    "thisResponse": "This Response",
     "sessionTotal": "Session Total",
     "input": "Input",
     "output": "Output",

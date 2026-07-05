@@ -66,6 +66,7 @@ export function TokenUsageSection({ event }: { event: EventRow }) {
   const { t } = useTranslation();
   const usage = readEventUsage(event);
   if (!usage) return null;
+  const primaryLabel = usage.is_claude_code ? t("detail.thisResponse") : t("detail.lastCall");
 
   return (
     <section className="rounded-md border border-border bg-card overflow-hidden">
@@ -74,9 +75,11 @@ export function TokenUsageSection({ event }: { event: EventRow }) {
           {t("detail.tokenUsage")}
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 p-3.5 sm:grid-cols-2">
-        <TokenUsageCard label={t("detail.lastCall")} usage={usage.last_token_usage} />
-        <TokenUsageCard label={t("detail.sessionTotal")} usage={usage.total_token_usage} />
+      <div className={`grid grid-cols-1 gap-3 p-3.5 ${usage.is_claude_code ? "" : "sm:grid-cols-2"}`}>
+        <TokenUsageCard label={primaryLabel} usage={usage.last_token_usage} />
+        {!usage.is_claude_code && (
+          <TokenUsageCard label={t("detail.sessionTotal")} usage={usage.total_token_usage} />
+        )}
       </div>
     </section>
   );
@@ -114,14 +117,22 @@ function tokenUsageRows(usage: TokenUsage, t: (key: string) => string): Array<{ 
   ];
 }
 
-function readEventUsage(event: EventRow): { last_token_usage: TokenUsage; total_token_usage: TokenUsage } | null {
+function readEventUsage(event: EventRow): {
+  last_token_usage: TokenUsage;
+  total_token_usage: TokenUsage;
+  is_claude_code: boolean;
+} | null {
   if (!isAiReplyEvent(event)) return null;
   const meta = parseRecord(event.metadata);
   const usage = parseRecord(meta.usage);
   const totalUsage = readTokenUsage(usage.total_token_usage) ?? readTokenUsage(usage);
   if (!totalUsage) return null;
   const lastUsage = readTokenUsage(usage.last_token_usage) ?? emptyTokenUsage();
-  return { last_token_usage: lastUsage, total_token_usage: totalUsage };
+  return {
+    last_token_usage: lastUsage,
+    total_token_usage: totalUsage,
+    is_claude_code: stringOrNull(meta.claude_event_type) !== null,
+  };
 }
 
 function isAiReplyEvent(event: EventRow): boolean {
@@ -496,13 +507,14 @@ export function MetadataSection({
   const parsed = parseMetadata(metadata);
 
   // Show Detail displays the original JSONL line for this event, not the
-  // parser-built metadata. `raw_text` is filled by the reader for every
-  // parsed event and survives into the persisted metadata (event_dao keeps
-  // every key except a small skip set), so it is the canonical source.
-  const rawText =
-    parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>).raw_text
-      : null;
+  // parser-built metadata. Claude Code stores that line as `source_raw_text`;
+  // Codex/detail fallbacks may still use `raw_text`.
+  const rawText = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (
+      (parsed as Record<string, unknown>).source_raw_text
+      ?? (parsed as Record<string, unknown>).raw_text
+    )
+    : null;
   const displayValue: unknown =
     typeof rawText === "string" && rawText.length > 0 ? rawText : parsed;
 

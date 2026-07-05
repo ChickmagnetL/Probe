@@ -511,12 +511,38 @@ export function extractFields(
       break;
     }
 
+    case "compact_summary": {
+      const summary = stringOrNull(meta.summary);
+      if (summary) fields.push({ key: "summary", label: "Summary", value: truncate(summary, 120) });
+      break;
+    }
+
+    case "stop_hook_summary": {
+      const stopReason = stringOrNull(meta.stop_reason);
+      const hookCount = meta.hook_count;
+      const prevented = meta.prevented_continuation;
+      const durMs = meta.duration_ms as number | undefined;
+      if (stopReason) fields.push({ key: "stop", label: "Stop Reason", value: stopReason });
+      if (typeof hookCount === "number") fields.push({ key: "hooks", label: "Hooks", value: String(hookCount) });
+      if (typeof prevented === "boolean") fields.push({ key: "prevented", label: "Prevented Continuation", value: String(prevented) });
+      if (durMs !== undefined) fields.push({ key: "dur", label: "Duration", value: formatDuration(durMs) });
+      break;
+    }
+
     case "hook": {
       const hookName = stringOrNull(meta.hook_name);
       const command = stringOrNull(meta.command);
+      const hookType = stringOrNull(meta.hook_type);
+      const status = stringOrNull(meta.status);
+      const decision = stringOrNull(meta.decision);
+      const message = stringOrNull(meta.message);
       const exitCode = meta.exit_code;
       const durMs = meta.duration_ms as number | undefined;
       if (hookName) fields.push({ key: "name", label: "Name", value: hookName });
+      if (hookType) fields.push({ key: "type", label: "Type", value: hookType });
+      if (status) fields.push({ key: "status", label: "Status", value: status });
+      if (decision) fields.push({ key: "decision", label: "Decision", value: decision });
+      if (message) fields.push({ key: "message", label: "Message", value: truncate(message, 120) });
       if (command) fields.push({ key: "cmd", label: "Command", value: command });
       if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
       if (durMs !== undefined) fields.push({ key: "dur", label: "Duration", value: formatDuration(durMs) });

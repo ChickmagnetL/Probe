@@ -8,8 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from probe.codex_adapter.reader import build_parse_error
-
 from .reader import discover_claude_code_files
 
 _VISIBLE_SYSTEM_SUBTYPES = {
@@ -20,16 +18,58 @@ _VISIBLE_SYSTEM_SUBTYPES = {
 # ``claude_event_type=compact_boundary`` with their rich fields) rather than via
 # this table.
 _HIDDEN_SYSTEM_SUBTYPES = frozenset(
-    {"away_summary", "informational", "turn_duration"}
+    {"away_summary", "hook_callback", "informational", "turn_duration"}
 )
 _HIDDEN_METADATA_TYPES = frozenset(
-    {"ai-title", "agent-name", "attachment", "file-history-snapshot", "last-prompt", "mode", "permission-mode"}
+    {
+        "agent-color",
+        "agent-name",
+        "agent-setting",
+        "ai-title",
+        "attachment",
+        "attribution-snapshot",
+        "content-replacement",
+        "custom-title",
+        "file-history-snapshot",
+        "last-prompt",
+        "marble-origami-commit",
+        "marble-origami-snapshot",
+        "mode",
+        "permission-mode",
+        "pr-link",
+        "progress",
+        "speculation-accept",
+        "summary",
+        "tag",
+        "task-summary",
+        "worktree-state",
+    }
 )
 # Attachment subtypes promoted to a visible ``hook`` system_event. Other
 # attachment kinds stay hidden metadata but still carry a ``claude_event_type``
 # set to their attachment.type (e.g. ``skill_listing``).
-_HOOK_ATTACHMENT_TYPES = frozenset({"hook_success", "hook_additional_context"})
-
+_HOOK_ATTACHMENT_TYPES = frozenset(
+    {
+        "hook_success",
+        "hook_non_blocking_error",
+        "hook_blocking_error",
+        "hook_cancelled",
+        "hook_additional_context",
+        "hook_permission_decision",
+        "hook_stopped_continuation",
+        "hook_system_message",
+    }
+)
+_HOOK_ATTACHMENT_STATUSES = {
+    "hook_success": "success",
+    "hook_non_blocking_error": "non_blocking_error",
+    "hook_blocking_error": "blocking_error",
+    "hook_cancelled": "cancelled",
+    "hook_additional_context": "additional_context",
+    "hook_permission_decision": "permission_decision",
+    "hook_stopped_continuation": "stopped_continuation",
+    "hook_system_message": "system_message",
+}
 
 @dataclass
 class SessionBuild:
@@ -444,7 +484,7 @@ def _events_for_row(
         # through to "Unhandled Claude record".
         return _events_for_queue_operation(session_id=session_id, row_info=row_info)
     if record_type == "attachment":
-        # Hook attachments are promoted to a visible hook_completed event; all
+        # Hook attachments are promoted to a visible hook system_event; all
         # other attachment kinds fall through to hidden metadata below.
         events, count, keys = _events_for_attachment_row(
             session_id=session_id, row_info=row_info
@@ -452,6 +492,17 @@ def _events_for_row(
         if events is not None:
             return events, count, keys
     if record_type in _HIDDEN_METADATA_TYPES:
+        extra_meta: dict[str, Any] = {
+            "graph_hidden": True,
+            "claude_event_type": record_type,
+        }
+        if record_type == "summary":
+            leaf_uuid = _string_or_none(row.get("leafUuid"))
+            summary = _string_or_none(row.get("summary"))
+            if leaf_uuid:
+                extra_meta["leaf_uuid"] = leaf_uuid
+            if summary:
+                extra_meta["summary"] = summary
         return (
             [
                 _build_event(
@@ -465,10 +516,7 @@ def _events_for_row(
                     # graph_hidden but still carry a native identity (= record
                     # type verbatim, e.g. ``mode``/``permission-mode``) so every
                     # emitted event has a ``claude_event_type`` if surfaced.
-                    extra_meta={
-                        "graph_hidden": True,
-                        "claude_event_type": record_type,
-                    },
+                    extra_meta=extra_meta,
                 )
             ],
             0,
@@ -520,6 +568,31 @@ def _events_for_user_row(
         )
 
     content = message.get("content")
+    if row.get("isCompactSummary") is True:
+        summary = _coerce_text(content) or "Compact summary"
+        return (
+            [
+                _build_event(
+                    session_id=session_id,
+                    row_info=row_info,
+                    block_index=0,
+                    kind="compaction_event",
+                    role="system",
+                    phase="metadata",
+                    content=summary,
+                    extra_meta={
+                        "graph_hidden": True,
+                        "raw_content_type": "compact_summary",
+                        "claude_event_type": "compact_summary",
+                        "summary": summary,
+                        "is_compact_summary": True,
+                    },
+                )
+            ],
+            0,
+            set(),
+        )
+
     if isinstance(content, str):
         if row.get("isMeta"):
             return (
@@ -832,11 +905,13 @@ def _events_for_system_row(
         # Promote with retry fields + ``claude_event_type=api_error`` so the
         # frontend renders the rich error card (was hitting the default branch).
         return _events_for_api_error(session_id=session_id, row_info=row_info)
-    if subtype == "compact_boundary":
+    if subtype in {"compact_boundary", "microcompact_boundary"}:
         # Promote with token counts + ``claude_event_type=compact_boundary`` so
         # the frontend renders the compaction card (was hitting the default
         # branch).
         return _events_for_compact_boundary(session_id=session_id, row_info=row_info)
+    if subtype == "stop_hook_summary":
+        return _events_for_stop_hook_summary(session_id=session_id, row_info=row_info)
     if subtype in _VISIBLE_SYSTEM_SUBTYPES:
         kind, hidden = _VISIBLE_SYSTEM_SUBTYPES[subtype]
         return (
@@ -885,6 +960,75 @@ def _events_for_system_row(
         ],
         0 if subtype in _HIDDEN_SYSTEM_SUBTYPES else 1,
         set() if subtype in _HIDDEN_SYSTEM_SUBTYPES else {f"system:{subtype or 'unknown'}"},
+    )
+
+
+def _events_for_stop_hook_summary(
+    *,
+    session_id: str,
+    row_info: dict[str, Any],
+) -> tuple[list[dict[str, Any]], int, set[str]]:
+    row = row_info["data"]
+    stop_reason = _string_or_none(row.get("stopReason"))
+    hook_errors = row.get("hookErrors")
+    message = (
+        _string_or_none(row.get("content"))
+        or stop_reason
+        or _coerce_text(hook_errors)
+        or "Stop hook summary"
+    )
+    meta: dict[str, Any] = {
+        "graph_hidden": False,
+        "claude_event_type": "stop_hook_summary",
+        "system_subtype": "stop_hook_summary",
+        "message": message,
+    }
+
+    hook_count = row.get("hookCount")
+    if isinstance(hook_count, int) and not isinstance(hook_count, bool):
+        meta["hook_count"] = hook_count
+    hook_infos = row.get("hookInfos")
+    if isinstance(hook_infos, list):
+        meta["hook_infos"] = hook_infos
+    if isinstance(hook_errors, list):
+        meta["hook_errors"] = hook_errors
+    elif isinstance(hook_errors, str) and hook_errors:
+        meta["hook_errors"] = [hook_errors]
+
+    prevented = row.get("preventedContinuation")
+    if isinstance(prevented, bool):
+        meta["prevented_continuation"] = prevented
+    if stop_reason:
+        meta["stop_reason"] = stop_reason
+    has_output = row.get("hasOutput")
+    if isinstance(has_output, bool):
+        meta["has_output"] = has_output
+    tool_use_id = _string_or_none(row.get("toolUseID"))
+    if tool_use_id:
+        meta["tool_use_id"] = tool_use_id
+        meta["call_id"] = tool_use_id
+    duration_ms = row.get("durationMs")
+    if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool):
+        meta["duration_ms"] = duration_ms
+    message_count = row.get("messageCount")
+    if isinstance(message_count, int) and not isinstance(message_count, bool):
+        meta["message_count"] = message_count
+
+    return (
+        [
+            _build_event(
+                session_id=session_id,
+                row_info=row_info,
+                block_index=0,
+                kind="system_event",
+                role="system",
+                phase="system",
+                content=message,
+                extra_meta=meta,
+            )
+        ],
+        0,
+        set(),
     )
 
 
@@ -955,7 +1099,7 @@ def _events_for_compact_boundary(
     session_id: str,
     row_info: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], int, set[str]]:
-    """Route ``system subtype=compact_boundary`` to ``claude_event_type=compact_boundary``.
+    """Route compact/microcompact system rows to ``claude_event_type=compact_boundary``.
 
     Carries ``summary`` + ``original_token_count`` + ``compacted_token_count``
     derived from ``compactMetadata`` plus the claude_code-specific ``trigger``
@@ -966,14 +1110,17 @@ def _events_for_compact_boundary(
     the token counts dropped — never crashes.
     """
     row = row_info["data"]
-    content = _coerce_text(row.get("content")) or "compact_boundary"
+    subtype = _string_or_none(row.get("subtype")) or "compact_boundary"
+    content = _coerce_text(row.get("content")) or subtype
     compact_metadata = row.get("compactMetadata")
     if not isinstance(compact_metadata, dict):
         compact_metadata = {}
 
     meta: dict[str, Any] = {
+        # microcompact_boundary uses the same UI treatment as compact_boundary;
+        # keep the exact raw subtype separately for detail cards and debugging.
         "claude_event_type": "compact_boundary",
-        "system_subtype": "compact_boundary",
+        "system_subtype": subtype,
         # The frontend compaction card reads ``meta.summary`` for the message.
         "summary": content,
     }
@@ -1058,9 +1205,9 @@ def _events_for_attachment_row(
 ) -> tuple[list[dict[str, Any]] | None, int, set[str]]:
     """Route attachment rows by attachment.type.
 
-    Hook attachments (``hook_success`` / ``hook_additional_context``) promote to
-    a visible ``system_event`` with ``claude_event_type=hook`` carrying
-    hook_name/command/exit_code/duration_ms/stdout.
+    Hook attachments promote to a visible ``system_event`` with
+    ``claude_event_type=hook`` carrying hook_name/hook_type/status plus
+    command/exit_code/duration_ms/decision/output fields when present.
 
     All other attachment kinds (``skill_listing``, ``command_permissions``,
     ``edited_text_file``, ``task_reminder``, ...) stay hidden metadata but get
@@ -1075,7 +1222,7 @@ def _events_for_attachment_row(
     attachment = row.get("attachment")
     if not isinstance(attachment, dict):
         return None, 0, set()
-    attachment_type = attachment.get("type")
+    attachment_type = _string_or_none(attachment.get("type"))
     if attachment_type not in _HOOK_ATTACHMENT_TYPES:
         # Non-hook attachment: hidden metadata with claude_event_type set to
         # the attachment.type verbatim (e.g. ``skill_listing``,
@@ -1106,34 +1253,50 @@ def _events_for_attachment_row(
         )
 
     hook_name = _string_or_none(attachment.get("hookName"))
+    tool_use_id = _string_or_none(attachment.get("toolUseID"))
     command = _string_or_none(attachment.get("command"))
     stdout = _string_or_none(attachment.get("stdout"))
     stderr = _string_or_none(attachment.get("stderr"))
     exit_code = attachment.get("exitCode")
     duration_ms = attachment.get("durationMs")
     hook_event = _string_or_none(attachment.get("hookEvent"))
+    decision = _string_or_none(attachment.get("decision"))
+    message = (
+        _string_or_none(attachment.get("message"))
+        or _string_or_none(attachment.get("blockingError"))
+        or _coerce_text(attachment.get("content"))
+    )
 
     meta: dict[str, Any] = {
         "claude_event_type": "hook",
         "raw_content_type": "attachment",
         "attachment_type": attachment_type,
+        "status": _HOOK_ATTACHMENT_STATUSES[attachment_type],
     }
     if hook_name:
         meta["hook_name"] = hook_name
+    if tool_use_id:
+        meta["tool_use_id"] = tool_use_id
+        meta["call_id"] = tool_use_id
     # hook_type is the frontend-facing alias of the raw hookEvent field.
     if hook_event:
         meta["hook_type"] = hook_event
+    if decision:
+        meta["decision"] = decision
     if command:
         meta["command"] = command
     if stdout:
         meta["stdout"] = _truncate_preview(stdout)
     if stderr:
         meta["stderr"] = _truncate_preview(stderr)
+    if message:
+        meta["message"] = _truncate_preview(message)
     if isinstance(exit_code, int) and not isinstance(exit_code, bool):
         meta["exit_code"] = exit_code
     if isinstance(duration_ms, int) and not isinstance(duration_ms, bool):
         meta["duration_ms"] = duration_ms
 
+    content = hook_name or message or _HOOK_ATTACHMENT_STATUSES[attachment_type]
     return (
         [
             _build_event(
@@ -1143,7 +1306,7 @@ def _events_for_attachment_row(
                 kind="system_event",
                 role="system",
                 phase="system",
-                content=hook_name or "Hook completed",
+                content=content,
                 extra_meta=meta,
             )
         ],
@@ -1775,6 +1938,8 @@ def _metadata_content_preview(row: dict[str, Any]) -> str:
         return "File history snapshot"
     if record_type == "last-prompt":
         return _coerce_text(row.get("lastPrompt")) or "Last prompt"
+    if record_type == "summary":
+        return _coerce_text(row.get("summary")) or "Summary"
     if record_type == "attachment":
         attachment = row.get("attachment")
         if isinstance(attachment, dict):
