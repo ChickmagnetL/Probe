@@ -45,14 +45,11 @@ export function extractGraphTooltipFields(
   }
 
   const baseline: EventField[] = [];
-  // claude_code events carry a native identity (``claude_event_type``); prepend
-  // it as the baseline so the tooltip always shows the identity first. codex
-  // events have no such field and fall through to the record_type / payload_type
-  // baseline unchanged.
-  const claudeEventType = stringOrNull(meta.claude_event_type);
-  if (claudeEventType) {
-    baseline.push({ key: "claude_event_type", label: "Identity", value: claudeEventType });
-  } else {
+  // Claude Code events are identified by `claude_event_type`; they have no
+  // Codex-style record_type/payload_type, so the baseline must stay empty to
+  // avoid leaking Codex field labels into Claude Code tooltips.
+  const isClaudeCodeEvent = stringOrNull(meta.claude_event_type) !== null;
+  if (!isClaudeCodeEvent) {
     const recordType = stringOrNull(meta.record_type);
     const payloadType = stringOrNull(meta.payload_type) ?? stringOrNull(meta.event_type);
     if (recordType) baseline.push({ key: "record_type", label: "Type", value: recordType });

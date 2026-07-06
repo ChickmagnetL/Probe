@@ -10,7 +10,7 @@ interface RawLine {
   lineNo: number;
   text: string;
   formatted: string;
-  eventId: string | null;
+  eventIds: string[];
 }
 
 // ── Helpers ────────────────────────────────────────────
@@ -112,19 +112,20 @@ const RawLineItem = memo(function RawLineItem({
   style,
   itemRef,
 }: RawLineItemProps) {
+  const hasEvents = line.eventIds.length > 0;
   return (
     <div
       ref={itemRef}
       className={`border-b border-border/50 cursor-pointer transition-colors ${
         isSelected
           ? "bg-primary/[0.06] border-l-2 border-l-primary/40"
-          : line.eventId
+          : hasEvents
             ? "border-l-2 border-l-primary/20 hover:bg-accent/30"
             : "hover:bg-accent/30"
       }`}
       style={style}
       onClick={() => {
-        if (line.eventId) onClick(line.eventId);
+        if (hasEvents) onClick(line.eventIds[0]);
       }}
     >
       <div className="flex items-center gap-2 pr-4 pt-1.5">
@@ -135,7 +136,7 @@ const RawLineItem = memo(function RawLineItem({
         >
           {line.lineNo}
         </span>
-        {line.eventId && <TypeBadge label={getTypeBadgeLabel(line.text)} />}
+        {hasEvents && <TypeBadge label={getTypeBadgeLabel(line.text)} />}
       </div>
       <pre className="px-4 pl-[52px] pb-2 pt-1 whitespace-pre-wrap overflow-x-hidden text-[12px] leading-[1.55] text-secondary-foreground" style={{ wordBreak: "break-word" }}>
         {line.formatted}
@@ -196,7 +197,7 @@ function VirtualRow({ index, data, style }: VirtualRowProps) {
     <div style={{ ...style, overflow: "hidden" }}>
       <RawLineItem
         line={line}
-        isSelected={line.eventId === selectedEventId}
+        isSelected={line.eventIds.includes(selectedEventId ?? "")}
         onClick={onSelect}
         itemRef={setItemRef}
       />
@@ -363,24 +364,26 @@ export function RawView() {
           lineNo: i + 1,
           text,
           formatted: formatJSON(text),
-          eventId: null as string | null,
+          eventIds: [] as string[],
         }))
     : [];
 
-  // Build lineNo -> eventId map from detail.events
-  const lineEventMap = new Map<number, string>();
+  // Build lineNo -> eventIds map from detail.events
+  const lineEventMap = new Map<number, string[]>();
   if (detail?.events) {
     for (const ev of detail.events) {
-      if (ev.source_line_no != null && !lineEventMap.has(ev.source_line_no)) {
-        lineEventMap.set(ev.source_line_no, ev.id);
+      if (ev.source_line_no != null) {
+        if (!lineEventMap.has(ev.source_line_no)) {
+          lineEventMap.set(ev.source_line_no, []);
+        }
+        lineEventMap.get(ev.source_line_no)!.push(ev.id);
       }
     }
   }
 
   // Attach event IDs to lines
   for (const line of lines) {
-    const eventId = lineEventMap.get(line.lineNo);
-    if (eventId) line.eventId = eventId;
+    line.eventIds = lineEventMap.get(line.lineNo) || [];
   }
 
   const useVirtualization = lines.length > LINE_THRESHOLD;
@@ -448,7 +451,7 @@ export function RawView() {
   useEffect(() => {
     if (selectedEventId == null) return;
 
-    const line = lines.find((l) => l.eventId === selectedEventId);
+    const line = lines.find((l) => l.eventIds.includes(selectedEventId));
     if (!line) return;
 
     const idx = lines.indexOf(line);
@@ -552,7 +555,7 @@ export function RawView() {
         >
           <RawLineItem
             line={line}
-            isSelected={line.eventId === selectedEventId}
+            isSelected={line.eventIds.includes(selectedEventId ?? "")}
             onClick={handleSelect}
           />
         </div>

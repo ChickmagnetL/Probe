@@ -437,10 +437,8 @@ export function extractFields(
     case "Task": {
       const args = parseArgsObject(meta);
       const subagentType = argsField(meta, args, "subagent_type");
-      const model = argsField(meta, args, "model");
       const description = argsField(meta, args, "description");
       if (subagentType) fields.push({ key: "subagent", label: "Subagent", value: subagentType });
-      if (model) fields.push({ key: "model", label: "Model", value: model });
       if (description) fields.push({ key: "desc", label: "Description", value: truncate(description, 120) });
       break;
     }
@@ -470,24 +468,26 @@ export function extractFields(
       const status = stringOrNull(meta.status);
       const filePath = stringOrNull(meta.file_path);
       const exitCode = meta.exit_code;
+      const stdout = stringOrNull(meta.stdout);
       if (typeof meta.is_error === "boolean") fields.push({ key: "err", label: "Error", value: String(meta.is_error) });
       if (status) fields.push({ key: "status", label: "Status", value: status });
       if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
       if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
+      if (stdout) fields.push({ key: "stdout", label: "Output", value: truncate(stdout, 80) });
       break;
     }
 
     case "text": {
-      const model = stringOrNull(meta.model);
+      const contentPreview = stringOrNull(meta.input_content_text);
       const stopReason = stringOrNull(meta.stop_reason);
-      if (model) fields.push({ key: "model", label: "Model", value: model });
+      if (contentPreview) fields.push({ key: "content", label: "Content", value: truncate(contentPreview, 80) });
       if (stopReason) fields.push({ key: "stop", label: "Stop Reason", value: stopReason });
       break;
     }
 
     case "thinking": {
-      const model = stringOrNull(meta.model);
-      if (model) fields.push({ key: "model", label: "Model", value: model });
+      const contentPreview = stringOrNull(meta.input_content_text);
+      if (contentPreview) fields.push({ key: "content", label: "Thinking", value: truncate(contentPreview, 80) });
       break;
     }
 
@@ -580,12 +580,10 @@ export function extractFields(
     }
 
     case "queue_operation": {
-      // Content is rendered separately; no extra meta fields to surface.
       break;
     }
 
     case "local_command": {
-      // Content is rendered separately; no extra meta fields to surface.
       break;
     }
 
@@ -596,11 +594,16 @@ export function extractFields(
       const content = stringOrNull(meta.content);
       const toolName = stringOrNull(meta.tool_name);
       const name = stringOrNull(meta.name);
-      const recordType = stringOrNull(meta.record_type);
-      const payloadType = stringOrNull(meta.payload_type) ?? stringOrNull(meta.event_type);
 
-      if (recordType) fields.push({ key: "record_type", label: "Type", value: recordType });
-      if (payloadType) fields.push({ key: "payload_type", label: "Payload Type", value: payloadType });
+      // record_type/payload_type are Codex CLI concepts. Claude Code events
+      // (identified by claude_event_type) must not show these labels.
+      const isClaudeCodeEvent = stringOrNull(meta.claude_event_type) !== null;
+      if (!isClaudeCodeEvent) {
+        const recordType = stringOrNull(meta.record_type);
+        const payloadType = stringOrNull(meta.payload_type) ?? stringOrNull(meta.event_type);
+        if (recordType) fields.push({ key: "record_type", label: "Type", value: recordType });
+        if (payloadType) fields.push({ key: "payload_type", label: "Payload Type", value: payloadType });
+      }
       if (title) fields.push({ key: "title", label: "Title", value: truncate(title, 80) });
       if (toolName || name) fields.push({ key: "tool", label: "Tool", value: (toolName || name)! });
       if (summary) fields.push({ key: "summary", label: "Summary", value: truncate(summary, 120) });

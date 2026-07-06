@@ -81,6 +81,7 @@ class SessionBuild:
     is_subagent: bool
     agent_nickname: str | None = None
     agent_role: str | None = None
+    team_name: str | None = None
     cli_version: str | None = None
     start_time: str | None = None
     end_time: str | None = None
@@ -124,14 +125,28 @@ def _normalize_assistant_usage(raw_usage: Any) -> dict[str, Any] | None:
     input_tokens = _as_int_or_zero(raw_usage.get("input_tokens"))
     output_tokens = _as_int_or_zero(raw_usage.get("output_tokens"))
     cached_input_tokens = _as_int_or_zero(raw_usage.get("cache_read_input_tokens"))
+    cache_creation_input_tokens = _as_int_or_zero(raw_usage.get("cache_creation_input_tokens"))
     total_tokens = input_tokens + output_tokens
+    server_tool_use = raw_usage.get("server_tool_use")
+    service_tier = raw_usage.get("service_tier")
+    speed = raw_usage.get("speed")
+    cache_creation = raw_usage.get("cache_creation")
     per_turn = {
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
         "reasoning_output_tokens": 0,
         "cached_input_tokens": cached_input_tokens,
+        "cache_creation_input_tokens": cache_creation_input_tokens,
         "total_tokens": total_tokens,
     }
+    if isinstance(server_tool_use, dict):
+        per_turn["server_tool_use"] = server_tool_use
+    if isinstance(service_tier, str) and service_tier:
+        per_turn["service_tier"] = service_tier
+    if isinstance(speed, str) and speed:
+        per_turn["speed"] = speed
+    if isinstance(cache_creation, dict):
+        per_turn["cache_creation"] = cache_creation
     # claude_code raw data has no session-cumulative usage, so on each assistant
     # event both nested objects carry this turn's values. Per-event attachment
     # is safe: the frontend never sums per-event usage into session totals.
@@ -252,6 +267,17 @@ def _tool_result_metadata(
     if not isinstance(tool_use_result, dict):
         tool_use_result = {}
 
+    # Extract toolUseResult metadata fields (interrupted / isImage / noOutputExpected).
+    interrupted = tool_use_result.get("interrupted")
+    if isinstance(interrupted, bool):
+        meta["interrupted"] = interrupted
+    is_image = tool_use_result.get("isImage")
+    if isinstance(is_image, bool):
+        meta["is_image"] = is_image
+    no_output_expected = tool_use_result.get("noOutputExpected")
+    if isinstance(no_output_expected, bool):
+        meta["no_output_expected"] = no_output_expected
+
     if tool_name == "Bash":
         command = _string_or_none(tool_input.get("command"))
         if command:
@@ -324,6 +350,10 @@ def _tool_result_metadata(
         query = _string_or_none(tool_input.get("query"))
         if query:
             meta["query"] = query
+
+    source_tool_assistant_uuid = _string_or_none(row.get("sourceToolAssistantUUID"))
+    if source_tool_assistant_uuid:
+        meta["source_tool_assistant_uuid"] = source_tool_assistant_uuid
 
     return meta
 
@@ -792,6 +822,12 @@ def _events_for_assistant_row(
     usage = _normalize_assistant_usage(message.get("usage"))
     if usage is not None:
         assistant_row_meta["usage"] = usage
+    msg_id = message.get("id")
+    if isinstance(msg_id, str) and msg_id:
+        assistant_row_meta["message_id"] = msg_id
+    stop_details = message.get("stop_details")
+    if isinstance(stop_details, str) and stop_details:
+        assistant_row_meta["stop_details"] = stop_details
 
     events: list[dict[str, Any]] = []
     unknown_record_count = 0
@@ -1541,6 +1577,7 @@ def _serialize_session(build: SessionBuild) -> dict[str, Any]:
         "is_subagent": build.is_subagent,
         "agent_nickname": build.agent_nickname,
         "agent_role": build.agent_role,
+        "team_name": build.team_name,
         "cli_version": build.cli_version,
         "start_time": build.start_time,
         "end_time": build.end_time,
@@ -1652,6 +1689,11 @@ def _update_session_metadata(build: SessionBuild, row_info: dict[str, Any]) -> N
             if isinstance(value, str) and value:
                 build.agent_role = value
                 break
+
+    if not build.team_name:
+        team_name = row.get("teamName")
+        if isinstance(team_name, str) and team_name:
+            build.team_name = team_name
 
 
 def _event_uuid(event: dict[str, Any]) -> str | None:

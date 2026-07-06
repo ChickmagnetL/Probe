@@ -415,6 +415,16 @@ function ToolCallContent({ event }: { event: EventRow }) {
   let toolName = "";
   let toolArgs: Record<string, unknown> | null = null;
 
+  // Parse metadata first (Claude Code args are in metadata.args as JSON string)
+  const meta = (() => {
+    if (!metadata) return null;
+    if (typeof metadata === "string") {
+      try { return JSON.parse(metadata); } catch { return null; }
+    }
+    return metadata as Record<string, unknown>;
+  })();
+
+  // Parse toolName from content (Codex/OpenAI format: JSON with name/function.name)
   if (content) {
     try {
       const parsed = JSON.parse(content);
@@ -429,21 +439,18 @@ function ToolCallContent({ event }: { event: EventRow }) {
     }
   }
 
-  if (!toolName && metadata) {
-    try {
-      const meta =
-        typeof metadata === "string" ? JSON.parse(metadata) : metadata;
-      toolName = meta.name ?? meta.function?.name ?? meta.tool ?? "";
-      if (!toolArgs) {
-        const rawArgs = meta.arguments ?? meta.parameters ?? meta.input ?? meta.args;
-        if (typeof rawArgs === "string") {
-          try { toolArgs = JSON.parse(rawArgs); } catch { toolArgs = { raw: rawArgs }; }
-        } else if (typeof rawArgs === "object" && rawArgs !== null) {
-          toolArgs = rawArgs as Record<string, unknown>;
-        }
-      }
-    } catch {
-      /* ignore */
+  // Fallback: read toolName from metadata
+  if (!toolName && meta) {
+    toolName = (meta.name ?? meta.function?.name ?? meta.tool ?? "") as string;
+  }
+
+  // Always try to read toolArgs from metadata (Claude Code args are JSON string)
+  if (!toolArgs && meta) {
+    const rawArgs = meta.arguments ?? meta.parameters ?? meta.input ?? meta.args;
+    if (typeof rawArgs === "string") {
+      try { toolArgs = JSON.parse(rawArgs); } catch { toolArgs = { raw: rawArgs }; }
+    } else if (typeof rawArgs === "object" && rawArgs !== null) {
+      toolArgs = rawArgs as Record<string, unknown>;
     }
   }
 
