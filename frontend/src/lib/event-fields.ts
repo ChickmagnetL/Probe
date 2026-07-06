@@ -470,10 +470,10 @@ export function extractFields(
       const exitCode = meta.exit_code;
       const stdout = stringOrNull(meta.stdout);
       if (typeof meta.is_error === "boolean") fields.push({ key: "err", label: "Error", value: String(meta.is_error) });
-      if (status) fields.push({ key: "status", label: "Status", value: status });
       if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
-      if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
       if (stdout) fields.push({ key: "stdout", label: "Output", value: truncate(stdout, 80) });
+      if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
+      if (status) fields.push({ key: "status", label: "Status", value: status });
       break;
     }
 
@@ -539,11 +539,11 @@ export function extractFields(
       const exitCode = meta.exit_code;
       const durMs = meta.duration_ms as number | undefined;
       if (hookName) fields.push({ key: "name", label: "Name", value: hookName });
-      if (hookType) fields.push({ key: "type", label: "Type", value: hookType });
       if (status) fields.push({ key: "status", label: "Status", value: status });
       if (decision) fields.push({ key: "decision", label: "Decision", value: decision });
       if (message) fields.push({ key: "message", label: "Message", value: truncate(message, 120) });
       if (command) fields.push({ key: "cmd", label: "Command", value: command });
+      if (hookType) fields.push({ key: "type", label: "Type", value: hookType });
       if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
       if (durMs !== undefined) fields.push({ key: "dur", label: "Duration", value: formatDuration(durMs) });
       break;

@@ -46,6 +46,11 @@ export function MetaCardsGrid({ event }: { event: EventRow }) {
 
 // ── Content renderer by role/kind ────────────────────────
 
+function isHookEvent(event: EventRow): boolean {
+  const meta = parseRecord(event.metadata);
+  return stringOrNull(meta.claude_event_type) === "hook";
+}
+
 export function ContentRenderer({ event }: { event: EventRow }) {
   const { role, kind, content, content_preview } = event;
   const displayContent = content ?? content_preview;
@@ -53,6 +58,7 @@ export function ContentRenderer({ event }: { event: EventRow }) {
   if (kind === "tool_call") return <ToolCallContent event={event} />;
   if (kind === "tool_output") return <ToolOutputContent event={event} />;
   if (kind === "tool_event") return <ToolEventContent event={event} />;
+  if (isHookEvent(event)) return <HookEventContent event={event} />;
   if (!displayContent) return null;
   if (role === "user") return <PlainContent content={displayContent} />;
   if (role === "assistant" || kind.includes("assistant"))
@@ -405,6 +411,86 @@ function ToolEventContent({ event }: { event: EventRow }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function HookEventContent({ event }: { event: EventRow }) {
+  const meta = parseRecord(event.metadata);
+
+  const hookName = stringOrNull(meta.hook_name);
+  const command = stringOrNull(meta.command);
+  const status = stringOrNull(meta.status);
+  const decision = stringOrNull(meta.decision);
+  const message = stringOrNull(meta.message);
+  const exitCode = typeof meta.exit_code === "number" ? String(meta.exit_code) : null;
+  const durMs = typeof meta.duration_ms === "number" ? meta.duration_ms : null;
+  const stdoutText = stringOrNull(meta.stdout);
+  const stderrText = stringOrNull(meta.stderr);
+
+  // Key-value rows in importance order; only present fields render.
+  const rows: Array<[string, string]> = [];
+  if (command) rows.push(["command", command]);
+  if (status) rows.push(["status", status]);
+  if (decision) rows.push(["decision", decision]);
+  if (message)
+    rows.push([
+      "message",
+      message.length > 200 ? message.slice(0, 200) + "…" : message,
+    ]);
+  if (exitCode !== null) rows.push(["exit code", exitCode]);
+  if (durMs !== null) rows.push(["duration", formatDur(durMs)]);
+
+  return (
+    <div className="rounded-md border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border-b border-border">
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-accent shrink-0"
+        >
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+        </svg>
+        <span className="text-xs font-semibold text-card-foreground">
+          {hookName || "Hook"}
+        </span>
+      </div>
+      {rows.length > 0 && (
+        <div className="p-3.5 space-y-1.5">
+          {rows.map(([key, val]) => (
+            <div key={key} className="flex gap-2 text-xs">
+              <span className="text-muted-foreground font-medium shrink-0">
+                {key}:
+              </span>
+              <span className="text-card-foreground font-mono break-all">
+                {val}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {stdoutText && (
+        <div className="p-3.5 border-t border-border space-y-1.5">
+          <div className="text-xs text-muted-foreground font-medium">stdout</div>
+          <pre className="text-xs text-card-foreground whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed">
+            {stdoutText}
+          </pre>
+        </div>
+      )}
+      {stderrText && (
+        <div className="p-3.5 border-t border-border space-y-1.5">
+          <div className="text-xs text-red-500 font-medium">stderr</div>
+          <pre className="text-xs text-red-500 whitespace-pre-wrap break-words max-h-[400px] overflow-y-auto font-mono leading-relaxed">
+            {stderrText}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

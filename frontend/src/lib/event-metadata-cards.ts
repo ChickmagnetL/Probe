@@ -221,13 +221,6 @@ function buildKeyFieldCard(event: EventLike, meta: EventMeta): KeyFieldCard | nu
 
 // ── claude_code native-identity cards ───────────────────
 
-function readUsageTotalTokens(usage: unknown): string | null {
-  const u = objectOrNull(usage);
-  if (!u) return null;
-  const total = numberOrNull(u.total_tokens);
-  return total !== null ? total.toLocaleString() : null;
-}
-
 function formatPrePostTokens(pre: unknown, post: unknown): string | null {
   const preN = numberOrNull(pre);
   const postN = numberOrNull(post);
@@ -307,10 +300,6 @@ function buildClaudeCodeCards(
   if (blockType === "tool_use") {
     push("message.content[].name", toolIdentity());
   }
-  if (blockType === "tool_result") {
-    push("message.content[].tool_use_id", stringOrNull(parsed.call_id)
-      ?? sourceContentBlockString(sourceRecord, blockType, "tool_use_id"));
-  }
 
   switch (claudeEventType) {
     case "Bash":
@@ -355,7 +344,6 @@ function buildClaudeCodeCards(
       break;
     case "text":
       push("model", stringOrNull(parsed.model));
-      push("usage.total_tokens", readUsageTotalTokens(parsed.usage));
       break;
     case "thinking":
       push("model", stringOrNull(parsed.model));
