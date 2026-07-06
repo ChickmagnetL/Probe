@@ -163,6 +163,11 @@
     "general": "通用",
     "interface": "界面",
     "update": "更新",
+    "appearance": "外观",
+    "appearanceHint": "选择应用的颜色主题。",
+    "appearanceSystem": "跟随系统",
+    "appearanceLight": "浅色",
+    "appearanceDark": "深色",
     "language": "语言",
     "languageHint": "切换后界面会立即重新加载。",
     "browse": "浏览"

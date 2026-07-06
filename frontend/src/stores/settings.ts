@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { toIpcError } from "../ipc/errors";
 import { invoke } from "../ipc/invoke";
-import type { IpcError, SessionPlatform, Settings } from "../ipc/types";
+import type { AppearanceMode, IpcError, SessionPlatform, Settings } from "../ipc/types";
 
 interface SettingsState {
   settings: Settings;
@@ -19,6 +19,8 @@ interface SettingsState {
   setActivePlatform: (platform: SessionPlatform) => Promise<void>;
   /** Persist the interface language to the engine KV store and mirror it locally. */
   setInterfaceLanguage: (lang: string) => Promise<void>;
+  /** Persist the interface appearance mode to the engine KV store and mirror it locally. */
+  setAppearanceMode: (mode: AppearanceMode) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -73,6 +75,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setInterfaceLanguage: async (lang) => {
     try {
       await invoke.setSettings("interface_language", lang);
+      const settings = await invoke.getSettings();
+      set({ settings });
+    } catch (e) {
+      set({ error: toIpcError(e) });
+    }
+  },
+
+  setAppearanceMode: async (mode) => {
+    try {
+      await invoke.setSettings("appearance_mode", mode);
       const settings = await invoke.getSettings();
       set({ settings });
     } catch (e) {

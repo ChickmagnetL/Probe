@@ -16,6 +16,7 @@ export interface UpdateInfo {
 }
 
 export type SessionPlatform = "codex_cli" | "claude_code";
+export type AppearanceMode = "system" | "light" | "dark";
 
 export type UpdateStatus =
   | "checking"
@@ -223,6 +224,8 @@ export interface Settings {
   default_claude_path?: string;
   /** Persisted platform filter for the session library. */
   active_platform?: SessionPlatform;
+  /** Persisted interface appearance preference. */
+  appearance_mode?: AppearanceMode;
   [key: string]: string | undefined;
 }
 

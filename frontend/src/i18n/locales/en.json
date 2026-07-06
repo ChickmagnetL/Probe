@@ -163,6 +163,11 @@
     "general": "General",
     "interface": "Interface",
     "update": "Update",
+    "appearance": "Appearance",
+    "appearanceHint": "Choose the app color theme.",
+    "appearanceSystem": "System",
+    "appearanceLight": "Light",
+    "appearanceDark": "Dark",
     "language": "Language",
     "languageHint": "The interface will reload immediately after switching.",
     "browse": "Browse"

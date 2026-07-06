@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n";
 import { invoke } from "../../ipc/invoke";
+import type { AppearanceMode } from "../../ipc/types";
+import { APPEARANCE_MODES, getAppearanceMode } from "../../lib/appearance";
 import { getEffectivePlatformPath } from "../../lib/session-platform";
 import { useSettingsStore } from "../../stores/settings";
 import { useImportProgressStore } from "../../stores/import_progress";
@@ -23,18 +25,23 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const setCodexPath = useSettingsStore((s) => s.setCodexPath);
   const setClaudePath = useSettingsStore((s) => s.setClaudePath);
   const setInterfaceLanguage = useSettingsStore((s) => s.setInterfaceLanguage);
+  const setAppearanceMode = useSettingsStore((s) => s.setAppearanceMode);
   const runIncrementalImport = useImportProgressStore((s) => s.runIncrementalImport);
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [codexPath, setCodexPathDraft] = useState("");
   const [claudePath, setClaudePathDraft] = useState("");
   const [lang, setLang] = useState("");
+  const [appearanceMode, setAppearanceModeDraft] = useState<AppearanceMode>("system");
   const [saving, setSaving] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const appearanceRef = useRef<HTMLDivElement>(null);
   const langRef = useRef<HTMLDivElement>(null);
   const draftsHydratedRef = useRef(false);
   const effectiveCodexPath = getEffectivePlatformPath(settings, "codex_cli");
   const effectiveClaudePath = getEffectivePlatformPath(settings, "claude_code");
+  const savedAppearanceMode = getAppearanceMode(settings);
 
   // Load settings when the panel opens.
   useEffect(() => {
@@ -50,6 +57,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     setCodexPathDraft(effectiveCodexPath);
     setClaudePathDraft(effectiveClaudePath);
     setLang(settings.interface_language || i18n.language || "");
+    setAppearanceModeDraft(savedAppearanceMode);
     draftsHydratedRef.current = true;
   }, [
     open,
@@ -58,6 +66,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     effectiveCodexPath,
     effectiveClaudePath,
     settings.interface_language,
+    savedAppearanceMode,
   ]);
 
   // Discard unsaved drafts when the panel closes so reopening rehydrates from
@@ -67,6 +76,9 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       setCodexPathDraft("");
       setClaudePathDraft("");
       setLang("");
+      setAppearanceModeDraft("system");
+      setAppearanceOpen(false);
+      setLangOpen(false);
       draftsHydratedRef.current = false;
     }
   }, [open]);
@@ -83,6 +95,18 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, handleClose]);
+
+  // Close appearance dropdown when clicking outside.
+  useEffect(() => {
+    if (!appearanceOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (appearanceRef.current && !appearanceRef.current.contains(e.target as Node)) {
+        setAppearanceOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [appearanceOpen]);
 
   // Close language dropdown when clicking outside.
   useEffect(() => {
@@ -119,10 +143,16 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const defaultCodexHint = settings.default_codex_path;
   const defaultClaudeHint = settings.default_claude_path;
   const currentLang = i18n.language;
+  const appearanceModeLabels: Record<AppearanceMode, string> = {
+    system: t("settings.appearanceSystem"),
+    light: t("settings.appearanceLight"),
+    dark: t("settings.appearanceDark"),
+  };
   const codexPathDirty = codexPath.trim() !== effectiveCodexPath.trim();
   const claudePathDirty = claudePath.trim() !== effectiveClaudePath.trim();
   const langDirty = lang !== (settings.interface_language || currentLang || "");
-  const dirty = codexPathDirty || claudePathDirty || langDirty;
+  const appearanceModeDirty = appearanceMode !== savedAppearanceMode;
+  const dirty = codexPathDirty || claudePathDirty || langDirty || appearanceModeDirty;
 
   const handleSave = useCallback(async () => {
     const codexValue = codexPath.trim();
@@ -153,7 +183,11 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
         await setInterfaceLanguage(langValue);
         await i18n.changeLanguage(langValue);
       }
-      onClose();
+      if (appearanceModeDirty) {
+        await setAppearanceMode(appearanceMode);
+      }
+      setAppearanceOpen(false);
+      setLangOpen(false);
     } finally {
       setSaving(false);
     }
@@ -165,13 +199,15 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     codexPathDirty,
     claudePathDirty,
     langDirty,
+    appearanceMode,
+    appearanceModeDirty,
     setCodexPath,
     setClaudePath,
     setInterfaceLanguage,
+    setAppearanceMode,
     runIncrementalImport,
     defaultCodexHint,
     defaultClaudeHint,
-    onClose,
   ]);
 
   if (!open) return null;
@@ -296,47 +332,102 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
 
               {activeTab === "interface" && (
                 <>
-                  <div className="mb-2">
-                    <p id="settings-interface-title" className="text-sm font-medium text-foreground">
-                      {t("settings.language")}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t("settings.languageHint")}
-                    </p>
-                  </div>
-                  <div ref={langRef} className="relative mt-4">
-                    <button
-                      type="button"
-                      aria-labelledby="settings-interface-title"
-                      onClick={() => setLangOpen((v) => !v)}
-                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-ring/40"
-                    >
-                      <span>{(lang || currentLang) === "zh" ? "中文" : "English"}</span>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0 ml-2">
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
-                    </button>
-                    {langOpen && (
-                      <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
-                        {(["en", "zh"] as const).map((value) => (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => {
-                              setLang(value);
-                              setLangOpen(false);
-                            }}
-                            className={`w-full px-3 py-2 text-sm text-left transition-colors ${
-                              (lang || currentLang) === value
-                                ? "bg-primary/10 text-foreground"
-                                : "text-foreground hover:bg-accent"
-                            }`}
-                          >
-                            {value === "zh" ? "中文" : "English"}
-                          </button>
-                        ))}
+                  <div className="space-y-6">
+                    <div>
+                      <div className="mb-2">
+                        <p id="settings-appearance-title" className="text-sm font-medium text-foreground">
+                          {t("settings.appearance")}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {t("settings.appearanceHint")}
+                        </p>
                       </div>
-                    )}
+                      <div ref={appearanceRef} className="relative mt-4">
+                        <button
+                          type="button"
+                          aria-labelledby="settings-appearance-title"
+                          onClick={() => {
+                            setAppearanceOpen((v) => !v);
+                            setLangOpen(false);
+                          }}
+                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-ring/40"
+                        >
+                          <span>{appearanceModeLabels[appearanceMode]}</span>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0 ml-2">
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
+                        {appearanceOpen && (
+                          <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
+                            {APPEARANCE_MODES.map((value) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => {
+                                  setAppearanceModeDraft(value);
+                                  setAppearanceOpen(false);
+                                }}
+                                className={`w-full px-3 py-2 text-sm text-left transition-colors ${
+                                  appearanceMode === value
+                                    ? "bg-primary/10 text-foreground"
+                                    : "text-foreground hover:bg-accent"
+                                }`}
+                              >
+                                {appearanceModeLabels[value]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-2">
+                        <p id="settings-language-title" className="text-sm font-medium text-foreground">
+                          {t("settings.language")}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {t("settings.languageHint")}
+                        </p>
+                      </div>
+                      <div ref={langRef} className="relative mt-4">
+                        <button
+                          type="button"
+                          aria-labelledby="settings-language-title"
+                          onClick={() => {
+                            setLangOpen((v) => !v);
+                            setAppearanceOpen(false);
+                          }}
+                          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-ring/40"
+                        >
+                          <span>{(lang || currentLang) === "zh" ? "中文" : "English"}</span>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0 ml-2">
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
+                        {langOpen && (
+                          <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-card shadow-lg overflow-hidden">
+                            {(["en", "zh"] as const).map((value) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => {
+                                  setLang(value);
+                                  setLangOpen(false);
+                                }}
+                                className={`w-full px-3 py-2 text-sm text-left transition-colors ${
+                                  (lang || currentLang) === value
+                                    ? "bg-primary/10 text-foreground"
+                                    : "text-foreground hover:bg-accent"
+                                }`}
+                              >
+                                {value === "zh" ? "中文" : "English"}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
