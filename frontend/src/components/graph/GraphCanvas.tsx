@@ -233,6 +233,19 @@ export function GraphCanvas({
     dirtyRef.current = true;
   }, [labelsVisible]);
 
+  // Repaint (and rebuild static cache) when the theme changes
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      cacheDirtyRef.current = true;
+      dirtyRef.current = true;
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
   // Reset filter state when session changes
   useEffect(() => {
     setHiddenKinds(new Set());
@@ -325,7 +338,8 @@ export function GraphCanvas({
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.scale(t.k, t.k);
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.15)';
+    const isDark = document.documentElement.dataset.theme === "dark";
+    ctx.fillStyle = isDark ? 'rgba(148, 163, 184, 0.12)' : 'rgba(148, 163, 184, 0.15)';
     const gridSize = 30;
     const startX = Math.floor((-t.x / t.k) / gridSize) * gridSize;
     const startY = Math.floor((-t.y / t.k) / gridSize) * gridSize;

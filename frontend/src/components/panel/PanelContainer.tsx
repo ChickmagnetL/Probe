@@ -173,7 +173,7 @@ const CloseButton = memo(function CloseButton({
       onClick={() => closePanel(panelId)}
       className="absolute top-3 right-3 w-6 h-6 rounded-full flex items-center justify-center z-[15] transition-all duration-200"
       style={{
-        background: "rgba(255, 255, 255, 0.72)",
+        background: "var(--color-card, #FFFFFF)",
         backdropFilter: "blur(24px)",
         WebkitBackdropFilter: "blur(24px)",
         border: "1px solid var(--color-border, #E2E8F0)",
@@ -186,7 +186,7 @@ const CloseButton = memo(function CloseButton({
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.color = "var(--color-muted-foreground, #64748B)";
-        e.currentTarget.style.background = "rgba(255, 255, 255, 0.72)";
+        e.currentTarget.style.background = "var(--color-card, #FFFFFF)";
         e.currentTarget.style.borderColor = "var(--color-border, #E2E8F0)";
       }}
       aria-label={t("panel.closePanel")}
@@ -317,10 +317,7 @@ const PanelCard = memo(function PanelCard({
 }: PanelCardProps) {
   return (
     <div
-      className={`relative bg-white rounded-lg overflow-hidden min-w-0 min-h-0 w-full h-full ${panelCount > 1 ? "border border-border" : ""}`}
-      style={{
-        background: "linear-gradient(180deg, #FFFFFF, #F8FAFC)",
-      }}
+      className={`relative bg-card rounded-lg overflow-hidden min-w-0 min-h-0 w-full h-full ${panelCount > 1 ? "border border-border" : ""}`}
     >
       <PillTabBar
         activeView={view}

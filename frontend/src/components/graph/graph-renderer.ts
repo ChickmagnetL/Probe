@@ -24,14 +24,81 @@ const LABEL_FONT = "12px -apple-system, sans-serif";
 const SIDE_LABEL_GAP = 8;
 const BELOW_LABEL_GAP = 4;
 
+interface GraphTheme {
+  label: string;
+  labelDimmed: string;
+  guide: string;
+  spawn: string;
+  spawnDimmed: string;
+  branch: string;
+  branchDimmed: string;
+  link: string;
+  linkDimmed: string;
+  nodeFill: string;
+  nodeFillDimmed: string;
+  subagentBg: string;
+  subagentBgDimmed: string;
+  subagentCore: string;
+  subagentCoreDimmed: string;
+  grid: string;
+  dimOverlay: string;
+}
+
+const LIGHT_GRAPH_THEME: GraphTheme = {
+  label: "#666",
+  labelDimmed: "rgba(102,102,102,0.35)",
+  guide: "#e2e8f0",
+  spawn: "#94a3b8",
+  spawnDimmed: "#bbb",
+  branch: "#ddd",
+  branchDimmed: "#ddd",
+  link: "#bbb",
+  linkDimmed: "#bbb",
+  nodeFill: "#fff",
+  nodeFillDimmed: "rgba(255,255,255,0.8)",
+  subagentBg: "#fff",
+  subagentBgDimmed: "rgba(255,255,255,0.8)",
+  subagentCore: "#000",
+  subagentCoreDimmed: "#00000055",
+  grid: "rgba(148, 163, 184, 0.15)",
+  dimOverlay: "rgba(255,255,255,0.3)",
+};
+
+const DARK_GRAPH_THEME: GraphTheme = {
+  label: "#E6E8EC",
+  labelDimmed: "rgba(230,232,236,0.35)",
+  guide: "#323744",
+  spawn: "#64748B",
+  spawnDimmed: "#4B5563",
+  branch: "#323744",
+  branchDimmed: "#323744",
+  link: "#4B5563",
+  linkDimmed: "#323744",
+  nodeFill: "#181A20",
+  nodeFillDimmed: "rgba(24,26,32,0.8)",
+  subagentBg: "#181A20",
+  subagentBgDimmed: "rgba(24,26,32,0.8)",
+  subagentCore: "#E6E8EC",
+  subagentCoreDimmed: "#E6E8EC55",
+  grid: "rgba(148, 163, 184, 0.12)",
+  dimOverlay: "rgba(24,26,32,0.3)",
+};
+
+function readGraphTheme(): GraphTheme {
+  return document.documentElement.dataset.theme === "dark"
+    ? DARK_GRAPH_THEME
+    : LIGHT_GRAPH_THEME;
+}
+
 function drawNodeLabel(
   ctx: CanvasRenderingContext2D,
   node: GraphNode,
   dimmed: boolean,
 ) {
   const r = graphNodeLabelRadius(node);
+  const theme = readGraphTheme();
   ctx.font = LABEL_FONT;
-  ctx.fillStyle = dimmed ? "rgba(102,102,102,0.35)" : "#666";
+  ctx.fillStyle = dimmed ? theme.labelDimmed : theme.label;
 
   if (node.isAnchor) {
     ctx.textAlign = "center";
@@ -64,17 +131,18 @@ function markerSubagent(
   y: number,
   options: { outerColor?: string; innerColor?: string; size?: number; dimmed?: boolean } = {},
 ) {
+  const theme = readGraphTheme();
   const outerColor = options.outerColor ?? "#475569";
-  const innerColor = options.innerColor ?? "#000";
+  const innerColor = options.innerColor ?? theme.subagentCore;
   const size = options.size ?? 1;
   const dimmed = options.dimmed ?? false;
   const rOuter = 8 * size;
   const rInner = 4 * size;
 
-  // 1) White background (covers ribbon underneath)
+  // 1) Background (covers ribbon underneath)
   ctx.beginPath();
   ctx.arc(x, y, rOuter, 0, Math.PI * 2);
-  ctx.fillStyle = dimmed ? "rgba(255,255,255,0.8)" : "#fff";
+  ctx.fillStyle = dimmed ? theme.subagentBgDimmed : theme.subagentBg;
   ctx.fill();
 
   // 2) Outer ring
@@ -82,10 +150,10 @@ function markerSubagent(
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // 3) Black inner core
+  // 3) Inner core
   ctx.beginPath();
   ctx.arc(x, y, rInner, 0, Math.PI * 2);
-  ctx.fillStyle = dimmed ? "#00000055" : innerColor;
+  ctx.fillStyle = dimmed ? theme.subagentCoreDimmed : innerColor;
   ctx.fill();
 }
 
@@ -146,6 +214,7 @@ function drawFolderGuides(
 ) {
   if (dotMode) return;
 
+  const theme = readGraphTheme();
   ctx.save();
   ctx.lineCap = "round";
   ctx.setLineDash([]);
@@ -163,7 +232,7 @@ function drawFolderGuides(
     }
 
     ctx.globalAlpha = dimmed ? 0.22 : 0.85;
-    ctx.strokeStyle = "#e2e8f0";
+    ctx.strokeStyle = theme.guide;
     ctx.lineWidth = dimmed ? 1 : 2;
     ctx.beginPath();
     ctx.moveTo(spindle.cx, spindle.top);
@@ -199,6 +268,7 @@ export function renderStaticLayer(
 ) {
   const { nodes, links, nodeMap, adjacencyMap, spindles } = data;
   const hidden = hiddenKinds ?? new Set();
+  const theme = readGraphTheme();
 
   const focusId = selectedNodeId;
   const connectedIds = highlightIds ?? (() => {
@@ -250,7 +320,7 @@ export function renderStaticLayer(
         ctx.moveTo(fromX, fromY);
         ctx.bezierCurveTo(midX, fromY, midX, toY, toX, toY);
         ctx.globalAlpha = dimmed ? 0.28 : 0.8;
-        ctx.strokeStyle = tint ? tint + "cc" : (dimmed ? "#bbb" : "#94a3b8");
+        ctx.strokeStyle = tint ? tint + "cc" : (dimmed ? theme.spawnDimmed : theme.spawn);
         ctx.lineWidth = 1.7;
         ctx.setLineDash([5, 4]);
         ctx.stroke();
@@ -280,12 +350,12 @@ export function renderStaticLayer(
       }
       if (type === "branch") {
         ctx.globalAlpha = dimmed ? 0.15 : 0.4;
-        ctx.strokeStyle = dimmed ? "#ddd" : "#ddd";
+        ctx.strokeStyle = dimmed ? theme.branchDimmed : theme.branch;
         ctx.lineWidth = dimmed ? 1 : 1.5;
         ctx.setLineDash([3, 3]);
       } else {
         ctx.globalAlpha = dimmed ? 0.15 : 0.7;
-        ctx.strokeStyle = dimmed ? "#bbb" : "#bbb";
+        ctx.strokeStyle = dimmed ? theme.linkDimmed : theme.link;
         ctx.lineWidth = dimmed ? 2 : 3;
         ctx.setLineDash([]);
       }
@@ -305,7 +375,7 @@ export function renderStaticLayer(
     const r = node.radius;
 
     if (node.spindleRole === "subagent") {
-      // Subagent marker: white bg + outer ring + black inner core (R4)
+      // Subagent marker: bg + outer ring + inner core (R4)
       markerSubagent(ctx, node.x, node.y, {
         outerColor: node.color,
         dimmed,
@@ -330,7 +400,7 @@ export function renderStaticLayer(
       ctx.lineWidth = isSelected ? 4 : node.strokeWidth;
       ctx.stroke();
     } else {
-      ctx.fillStyle = dimmed ? "rgba(255,255,255,0.8)" : "#fff";
+      ctx.fillStyle = dimmed ? theme.nodeFillDimmed : theme.nodeFill;
       ctx.fill();
       ctx.strokeStyle = dimmed ? node.color + "55" : node.color;
       ctx.lineWidth = isSelected ? 3 : node.strokeWidth;
@@ -411,6 +481,7 @@ export function renderLODLayer(
   const { transform, hoveredNodeId, selectedNodeId, labelsVisible } = state;
   const { nodes, links, nodeMap, adjacencyMap, spindles } = data;
   const hidden = hiddenKinds ?? new Set();
+  const theme = readGraphTheme();
 
   ctx.clearRect(0, 0, width, height);
   ctx.save();
@@ -471,7 +542,7 @@ export function renderLODLayer(
         ctx.moveTo(fromX, fromY);
         ctx.bezierCurveTo(midX, fromY, midX, toY, toX, toY);
         ctx.globalAlpha = dimmed ? 0.28 : 0.8;
-        ctx.strokeStyle = tint ? tint + "cc" : (dimmed ? "#bbb" : "#94a3b8");
+        ctx.strokeStyle = tint ? tint + "cc" : (dimmed ? theme.spawnDimmed : theme.spawn);
         ctx.lineWidth = 1.7;
         ctx.setLineDash([5, 4]);
         ctx.stroke();
@@ -501,12 +572,12 @@ export function renderLODLayer(
       }
       if (type === "branch") {
         ctx.globalAlpha = dimmed ? 0.15 : 0.4;
-        ctx.strokeStyle = dimmed ? "#ddd" : "#ddd";
+        ctx.strokeStyle = dimmed ? theme.branchDimmed : theme.branch;
         ctx.lineWidth = dimmed ? 1 : 1.5;
         ctx.setLineDash([3, 3]);
       } else {
         ctx.globalAlpha = dimmed ? 0.15 : 0.7;
-        ctx.strokeStyle = dimmed ? "#bbb" : "#bbb";
+        ctx.strokeStyle = dimmed ? theme.linkDimmed : theme.link;
         ctx.lineWidth = dimmed ? 2 : 3;
         ctx.setLineDash([]);
       }
@@ -538,7 +609,7 @@ export function renderLODLayer(
     }
 
     if (node.spindleRole === "subagent") {
-      // Subagent marker: white bg + outer ring + black inner core (R4)
+      // Subagent marker: bg + outer ring + inner core (R4)
       markerSubagent(ctx, node.x, node.y, {
         outerColor: node.color,
         dimmed,
@@ -566,7 +637,7 @@ export function renderLODLayer(
       ctx.lineWidth = isSelected ? 4 : isHovered ? 3 : node.strokeWidth;
       ctx.stroke();
     } else {
-      ctx.fillStyle = dimmed ? "rgba(255,255,255,0.8)" : "#fff";
+      ctx.fillStyle = dimmed ? theme.nodeFillDimmed : theme.nodeFill;
       ctx.fill();
       ctx.strokeStyle = dimmed ? node.color + "55" : node.color;
       ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : node.strokeWidth;
@@ -608,6 +679,7 @@ export function renderDynamicOverlay(
   const hidden = hiddenKinds ?? new Set();
   // Don't render hover overlay for hidden nodes
   if (hidden.has(node.kind)) return;
+  const theme = readGraphTheme();
 
   const connectedIds = new Set<string>([hoveredNodeId]);
   const adj = adjacencyMap.get(hoveredNodeId);
@@ -624,7 +696,7 @@ export function renderDynamicOverlay(
     if (connectedIds.has(n.id)) continue;
     ctx.beginPath();
     ctx.arc(n.x, n.y, n.radius + 1, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.fillStyle = theme.dimOverlay;
     ctx.fill();
   }
 
@@ -651,6 +723,7 @@ export function renderGraph(
 ) {
   const { transform, hoveredNodeId, selectedNodeId, labelsVisible } = state;
   const { spindles } = data;
+  const theme = readGraphTheme();
 
   ctx.clearRect(0, 0, width, height);
   ctx.save();
@@ -709,7 +782,7 @@ export function renderGraph(
         ctx.moveTo(fromX, fromY);
         ctx.bezierCurveTo(midX, fromY, midX, toY, toX, toY);
         ctx.globalAlpha = dimmed ? 0.28 : 0.8;
-        ctx.strokeStyle = tint ? tint + "cc" : (dimmed ? "#bbb" : "#94a3b8");
+        ctx.strokeStyle = tint ? tint + "cc" : (dimmed ? theme.spawnDimmed : theme.spawn);
         ctx.lineWidth = 1.7;
         ctx.setLineDash([5, 4]);
         ctx.stroke();
@@ -739,12 +812,12 @@ export function renderGraph(
       }
       if (type === "branch") {
         ctx.globalAlpha = dimmed ? 0.15 : 0.4;
-        ctx.strokeStyle = dimmed ? "#ddd" : "#ddd";
+        ctx.strokeStyle = dimmed ? theme.branchDimmed : theme.branch;
         ctx.lineWidth = dimmed ? 1 : 1.5;
         ctx.setLineDash([3, 3]);
       } else {
         ctx.globalAlpha = dimmed ? 0.15 : 0.7;
-        ctx.strokeStyle = dimmed ? "#bbb" : "#bbb";
+        ctx.strokeStyle = dimmed ? theme.linkDimmed : theme.link;
         ctx.lineWidth = dimmed ? 2 : 3;
         ctx.setLineDash([]);
       }
@@ -775,7 +848,7 @@ export function renderGraph(
     }
 
     if (node.spindleRole === "subagent") {
-      // Subagent marker: white bg + outer ring + black inner core (R4)
+      // Subagent marker: bg + outer ring + inner core (R4)
       markerSubagent(ctx, node.x, node.y, {
         outerColor: node.color,
         dimmed,
@@ -803,7 +876,7 @@ export function renderGraph(
       ctx.lineWidth = isSelected ? 4 : isHovered ? 3 : node.strokeWidth;
       ctx.stroke();
     } else {
-      ctx.fillStyle = dimmed ? "rgba(255,255,255,0.8)" : "#fff";
+      ctx.fillStyle = dimmed ? theme.nodeFillDimmed : theme.nodeFill;
       ctx.fill();
       ctx.strokeStyle = dimmed ? node.color + "55" : node.color;
       ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : node.strokeWidth;

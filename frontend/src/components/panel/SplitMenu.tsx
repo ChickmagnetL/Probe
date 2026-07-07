@@ -35,7 +35,7 @@ export function SplitMenu({ open, onSplitRight, onSplitDown, onClose }: SplitMen
   return (
     <div
       ref={menuRef}
-      className="absolute left-[calc(100%+6px)] top-0 bg-white/95 backdrop-blur-xl border border-border rounded-[9px] p-1 min-w-[150px] z-30 shadow-lg"
+      className="absolute left-[calc(100%+6px)] top-0 bg-card/95 backdrop-blur-xl border border-border rounded-[9px] p-1 min-w-[150px] z-30 shadow-lg"
     >
       <button
         type="button"
