@@ -264,10 +264,10 @@ export function renderStaticLayer(
   data: GraphData,
   selectedNodeId: string | null,
   highlightIds?: Set<string> | null,
-  hiddenKinds?: Set<string>,
+  hiddenLabels?: Set<string>,
 ) {
   const { nodes, links, nodeMap, adjacencyMap, spindles } = data;
-  const hidden = hiddenKinds ?? new Set();
+  const hidden = hiddenLabels ?? new Set();
   const theme = readGraphTheme();
 
   const focusId = selectedNodeId;
@@ -294,7 +294,7 @@ export function renderStaticLayer(
     const tgt = nodeMap.get(link.target);
     if (!src || !tgt) continue;
     // Skip links connected to hidden nodes
-    if (hidden.has(src.kind) || hidden.has(tgt.kind)) continue;
+    if (hidden.has(src.label) || hidden.has(tgt.label)) continue;
     const dimmed = isDimming && !connectedIds.has(link.source) && !connectedIds.has(link.target);
     const key = `${link.type}_${dimmed ? 1 : 0}`;
     let arr = batches.get(key);
@@ -369,7 +369,7 @@ export function renderStaticLayer(
   // ── Draw nodes ────────────────────────────────────────
   for (const node of nodes) {
     // Skip hidden nodes
-    if (hidden.has(node.kind)) continue;
+    if (hidden.has(node.label)) continue;
     const dimmed = isDimming && !connectedIds.has(node.id);
     const isSelected = node.id === selectedNodeId;
     const r = node.radius;
@@ -430,12 +430,12 @@ export function renderLabels(
   labelsVisible: boolean,
   viewport: ViewportBounds,
   highlightIds?: Set<string> | null,
-  hiddenKinds?: Set<string>,
+  hiddenLabels?: Set<string>,
 ) {
   if (!labelsVisible || transform.k < 0.5) return;
 
   const { nodes, adjacencyMap } = data;
-  const hidden = hiddenKinds ?? new Set();
+  const hidden = hiddenLabels ?? new Set();
   const connectedIds = highlightIds ?? (() => {
     const ids = new Set<string>();
     const focusId = hoveredNodeId ?? selectedNodeId;
@@ -454,7 +454,7 @@ export function renderLabels(
 
   for (const node of nodes) {
     // Skip hidden nodes
-    if (hidden.has(node.kind)) continue;
+    if (hidden.has(node.label)) continue;
     if (!isNodeLabelInViewport(node, viewport)) continue;
     const dimmed = isDimming && !connectedIds.has(node.id);
     drawNodeLabel(ctx, node, dimmed);
@@ -476,11 +476,11 @@ export function renderLODLayer(
   height: number,
   viewport: ViewportBounds,
   highlightIds?: Set<string> | null,
-  hiddenKinds?: Set<string>,
+  hiddenLabels?: Set<string>,
 ) {
   const { transform, hoveredNodeId, selectedNodeId, labelsVisible } = state;
   const { nodes, links, nodeMap, adjacencyMap, spindles } = data;
-  const hidden = hiddenKinds ?? new Set();
+  const hidden = hiddenLabels ?? new Set();
   const theme = readGraphTheme();
 
   ctx.clearRect(0, 0, width, height);
@@ -515,7 +515,7 @@ export function renderLODLayer(
     const tgt = nodeMap.get(link.target);
     if (!src || !tgt) continue;
     // Skip links connected to hidden nodes
-    if (hidden.has(src.kind) || hidden.has(tgt.kind)) continue;
+    if (hidden.has(src.label) || hidden.has(tgt.label)) continue;
     if (!isLinkInViewport(src.x, src.y, tgt.x, tgt.y, vp)) continue;
     const dimmed = isDimming && !connectedIds.has(link.source) && !connectedIds.has(link.target);
     const key = `${link.type}_${dimmed ? 1 : 0}`;
@@ -591,7 +591,7 @@ export function renderLODLayer(
   // Nodes
   for (const node of nodes) {
     // Skip hidden nodes
-    if (hidden.has(node.kind)) continue;
+    if (hidden.has(node.label)) continue;
     if (!isInViewport(node.x, node.y, node.radius, vp)) continue;
 
     const dimmed = isDimming && !connectedIds.has(node.id);
@@ -668,7 +668,7 @@ export function renderDynamicOverlay(
   data: GraphData,
   transform: { x: number; y: number; k: number },
   hoveredNodeId: string | null,
-  hiddenKinds?: Set<string>,
+  hiddenLabels?: Set<string>,
 ) {
   if (!hoveredNodeId) return;
 
@@ -676,9 +676,9 @@ export function renderDynamicOverlay(
   const node = nodeMap.get(hoveredNodeId);
   if (!node) return;
 
-  const hidden = hiddenKinds ?? new Set();
+  const hidden = hiddenLabels ?? new Set();
   // Don't render hover overlay for hidden nodes
-  if (hidden.has(node.kind)) return;
+  if (hidden.has(node.label)) return;
   const theme = readGraphTheme();
 
   const connectedIds = new Set<string>([hoveredNodeId]);
@@ -692,7 +692,7 @@ export function renderDynamicOverlay(
   // Dim non-connected nodes
   for (const n of nodes) {
     // Skip hidden nodes
-    if (hidden.has(n.kind)) continue;
+    if (hidden.has(n.label)) continue;
     if (connectedIds.has(n.id)) continue;
     ctx.beginPath();
     ctx.arc(n.x, n.y, n.radius + 1, 0, Math.PI * 2);

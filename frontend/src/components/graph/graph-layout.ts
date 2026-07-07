@@ -173,7 +173,7 @@ export function buildGraphFromTurns(
   startX = PADDING,
   startY = PADDING,
   sessionId?: string,
-  hiddenKinds?: Set<string>,
+  hiddenLabels?: Set<string>,
 ): GraphData & { totalWidth: number; totalHeight: number } {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
@@ -197,7 +197,7 @@ export function buildGraphFromTurns(
   };
 
   for (const turn of turns) {
-    const result = layoutTurn(turn, startX, currentY, sessionMap, sessionId, hiddenKinds);
+    const result = layoutTurn(turn, startX, currentY, sessionMap, sessionId, hiddenLabels);
     const mainSpindle = result.spindles[0];
     if (mainSpindle) {
       const firstAnchor = firstMainAnchor(mainSpindle);
@@ -439,25 +439,21 @@ function layoutTurn(
   originY: number,
   sessionMap: Map<string, ChildSession>,
   sessionId?: string,
-  hiddenKinds?: Set<string>,
+  hiddenLabels?: Set<string>,
 ): { nodes: GraphNode[]; links: GraphLink[]; spindles: TurnSpindle[]; nextY: number } {
   const nodes: GraphNode[] = [];
   const links: GraphLink[] = [];
   const turnSpindles: TurnSpindle[] = [];
-  const hidden = hiddenKinds ?? new Set();
+  const hidden = hiddenLabels ?? new Set();
 
   const events = collectTurnEvents(turn);
   if (events.length === 0) {
     return { nodes, links, spindles: turnSpindles, nextY: originY + TURN_GAP };
   }
 
-  // Filter out hidden events (except anchors - user_input and assistant_output should never be hidden)
-  const visibleEvents = events.filter(ev => {
-    // Always show anchor nodes
-    if (ev.kind === "user_input" || ev.kind === "assistant_output") return true;
-    // Hide if kind is in hidden set
-    return !hidden.has(ev.kind);
-  });
+  // Filter out hidden events by label. "User"/"AI" never enter hiddenLabels,
+  // so anchor nodes naturally pass through.
+  const visibleEvents = events.filter(ev => !hidden.has(labelForEvent(turn, ev)));
 
   if (visibleEvents.length === 0) {
     return { nodes, links, spindles: turnSpindles, nextY: originY + TURN_GAP };
@@ -472,7 +468,7 @@ function layoutTurn(
     if (ev.kind === "tool_call" && ev.output_event_id) {
       // Only pair if the output is also visible
       const outputEvent = events.find(e => e.event_id === ev.output_event_id);
-      if (outputEvent && !hidden.has(outputEvent.kind)) {
+      if (outputEvent && !hidden.has(labelForEvent(turn, outputEvent))) {
         pairedOutputIds.add(ev.output_event_id);
       }
     }
@@ -504,7 +500,7 @@ function layoutTurn(
     if (ev.kind !== "tool_call" || !ev.output_event_id) continue;
     const outputEvent = visibleEvents.find((e) => e.event_id === ev.output_event_id);
     if (!outputEvent) continue;
-    const label = eventTypeLabel(ev);
+    const label = labelForEvent(turn, ev);
     const labelW = Math.min(SIDE_LABEL_MAX_WIDTH, Math.max(SIDE_LABEL_MIN_WIDTH, label.length * LABEL_CHAR_WIDTH));
     const offsetX = INTERMEDIATE_RADIUS + SIDE_LABEL_BOUNDS_GAP + labelW;
     eventPositions.push({
@@ -549,7 +545,7 @@ function layoutTurn(
       const markerNode: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
-        label: eventTypeLabel(ev),
+        label: labelForEvent(turn, ev),
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
@@ -587,7 +583,7 @@ function layoutTurn(
       const node: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
-        label: eventTypeLabel(ev),
+        label: labelForEvent(turn, ev),
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
@@ -608,7 +604,7 @@ function layoutTurn(
       const node: GraphNode = {
         id: ev.event_id,
         eventId: ev.event_id,
-        label: eventTypeLabel(ev),
+        label: labelForEvent(turn, ev),
         kind: ev.kind,
         x: pos.x,
         y: pos.y,
@@ -670,6 +666,14 @@ function mainSpineAnchorRole(turn: GraphTurn, event: TurnEvent): "input" | "outp
     return "output";
   }
   return null;
+}
+
+function labelForEvent(turn: GraphTurn, ev: TurnEvent): string {
+  const role = mainSpineAnchorRole(turn, ev);
+  if (role === "input") return "User";
+  if (role === "output") return "AI";
+  if (ev.kind === "assistant_output" || ev.kind === "assistant_update") return "assistant";
+  return eventTypeLabel(ev);
 }
 
 function mergeToolPairs(events: TurnEvent[]): TurnEvent[] {

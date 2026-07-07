@@ -6,7 +6,7 @@ const KIND_LABELS: Record<string, string> = {
   agents_md: "AGENTS.md",
   user_input: "User",
   assistant_output: "AI",
-  assistant_update: "AI",
+  assistant_update: "assistant",
   tool_call: "Tool",
   tool_output: "Result",
   tool_event: "Tool Event",

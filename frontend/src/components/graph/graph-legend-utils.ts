@@ -1,7 +1,7 @@
 import type { GraphNode } from "./graph-layout";
 
 /**
- * Priority mapping for sorting node kinds in the legend.
+ * Priority mapping for sorting node labels in the legend.
  * Lower numbers appear first. Grouped by semantic meaning:
  * - Input types: 0-19
  * - Output types: 20-29
@@ -40,38 +40,38 @@ const KIND_SORT_ORDER: Record<string, number> = {
 const DEFAULT_PRIORITY = 99;
 
 export interface LegendItem {
-  kind: string;
+  label: string;
   sampleNode: GraphNode;
 }
 
+const EXCLUDED_LEGEND_LABELS = new Set(["User", "AI"]);
+
 /**
- * Extract unique node kinds from the graph data and sort them by semantic priority.
- * Returns a sample node for each kind to enable eventTypeLabel() resolution.
- * Used to dynamically populate the legend with only the node types present in the current session.
- * Excludes user_input and assistant_output as they are anchor nodes not meant for filtering.
+ * Extract unique visible labels from the graph data and sort them by semantic priority.
+ * Used to dynamically populate the legend with only the labels present in the current session.
+ * Excludes User and AI anchor labels because they are not meant for filtering.
  */
-export function extractVisibleKinds(nodes: GraphNode[]): LegendItem[] {
-  const kindMap = new Map<string, GraphNode>();
+export function extractVisibleLegendItems(nodes: GraphNode[]): LegendItem[] {
+  const labelMap = new Map<string, GraphNode>();
   for (const node of nodes) {
-    // Skip anchor nodes (user input and assistant output)
-    if (node.kind === "user_input" || node.kind === "assistant_output") {
+    if (EXCLUDED_LEGEND_LABELS.has(node.label)) {
       continue;
     }
-    if (!kindMap.has(node.kind)) {
-      kindMap.set(node.kind, node);
+    if (!labelMap.has(node.label)) {
+      labelMap.set(node.label, node);
     }
   }
 
-  const items = Array.from(kindMap.entries()).map(([kind, sampleNode]) => ({
-    kind,
+  const items = Array.from(labelMap.entries()).map(([label, sampleNode]) => ({
+    label,
     sampleNode,
   }));
 
   items.sort((a, b) => {
-    const prioA = KIND_SORT_ORDER[a.kind] ?? DEFAULT_PRIORITY;
-    const prioB = KIND_SORT_ORDER[b.kind] ?? DEFAULT_PRIORITY;
+    const prioA = KIND_SORT_ORDER[a.sampleNode.kind] ?? DEFAULT_PRIORITY;
+    const prioB = KIND_SORT_ORDER[b.sampleNode.kind] ?? DEFAULT_PRIORITY;
     if (prioA !== prioB) return prioA - prioB;
-    return a.kind.localeCompare(b.kind); // Same priority: alphabetical
+    return a.label.localeCompare(b.label); // Same priority: alphabetical
   });
 
   return items;

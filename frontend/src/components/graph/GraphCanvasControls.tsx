@@ -1,24 +1,23 @@
 import { useTranslation } from "react-i18next";
 import { kindColor } from "../../lib/color";
-import { eventTypeLabel } from "./graph-labels";
 import type { LegendItem } from "./graph-legend-utils";
 
 interface GraphCanvasControlsProps {
   labelsVisible: boolean;
   onResetView: () => void;
   onToggleLabels: () => void;
-  visibleKinds: LegendItem[];
-  hiddenKinds: Set<string>;
-  onToggleKind: (kind: string) => void;
+  visibleLabels: LegendItem[];
+  hiddenLabels: Set<string>;
+  onToggleLabel: (label: string) => void;
 }
 
 export function GraphCanvasControls({
   labelsVisible,
   onResetView,
   onToggleLabels,
-  visibleKinds,
-  hiddenKinds,
-  onToggleKind,
+  visibleLabels,
+  hiddenLabels,
+  onToggleLabel,
 }: GraphCanvasControlsProps) {
   const { t } = useTranslation();
 
@@ -27,13 +26,13 @@ export function GraphCanvasControls({
       <div className="pointer-events-auto absolute top-4 right-4 glass-card rounded-xl p-3">
         <div className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-2.5">{t("graphControls.legend")}</div>
         <div className="flex flex-col gap-2 text-xs">
-          {visibleKinds.map(item => (
+          {visibleLabels.map(item => (
             <LegendDot
-              key={item.kind}
-              color={kindColor(item.kind)}
-              label={eventTypeLabel({ kind: item.kind, metadata: item.sampleNode.metadata })}
-              isHidden={hiddenKinds.has(item.kind)}
-              onClick={() => onToggleKind(item.kind)}
+              key={item.label}
+              color={kindColor(item.sampleNode.kind)}
+              label={item.label}
+              isHidden={hiddenLabels.has(item.label)}
+              onClick={() => onToggleLabel(item.label)}
             />
           ))}
         </div>
