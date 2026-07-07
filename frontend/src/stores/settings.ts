@@ -21,6 +21,8 @@ interface SettingsState {
   setInterfaceLanguage: (lang: string) => Promise<void>;
   /** Persist the interface appearance mode to the engine KV store and mirror it locally. */
   setAppearanceMode: (mode: AppearanceMode) => Promise<void>;
+  /** Persist the auto_sync flag to the engine KV store and mirror it locally. */
+  setAutoSync: (value: boolean) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -85,6 +87,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setAppearanceMode: async (mode) => {
     try {
       await invoke.setSettings("appearance_mode", mode);
+      const settings = await invoke.getSettings();
+      set({ settings });
+    } catch (e) {
+      set({ error: toIpcError(e) });
+    }
+  },
+
+  setAutoSync: async (value) => {
+    try {
+      await invoke.setSettings("auto_sync", value);
       const settings = await invoke.getSettings();
       set({ settings });
     } catch (e) {

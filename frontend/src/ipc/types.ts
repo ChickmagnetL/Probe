@@ -226,7 +226,11 @@ export interface Settings {
   active_platform?: SessionPlatform;
   /** Persisted interface appearance preference. */
   appearance_mode?: AppearanceMode;
-  [key: string]: string | undefined;
+  /** Persisted interface language code (e.g. "en", "zh"). */
+  interface_language?: string;
+  /** Whether to auto-scan and import sessions on startup (default true). */
+  auto_sync?: boolean;
+  [key: string]: string | boolean | undefined;
 }
 
 export interface SetSettingsParams {

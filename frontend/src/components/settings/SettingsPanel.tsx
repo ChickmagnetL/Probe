@@ -26,6 +26,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const setClaudePath = useSettingsStore((s) => s.setClaudePath);
   const setInterfaceLanguage = useSettingsStore((s) => s.setInterfaceLanguage);
   const setAppearanceMode = useSettingsStore((s) => s.setAppearanceMode);
+  const setAutoSync = useSettingsStore((s) => s.setAutoSync);
   const runIncrementalImport = useImportProgressStore((s) => s.runIncrementalImport);
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
@@ -33,6 +34,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const [claudePath, setClaudePathDraft] = useState("");
   const [lang, setLang] = useState("");
   const [appearanceMode, setAppearanceModeDraft] = useState<AppearanceMode>("system");
+  const [autoSyncDraft, setAutoSyncDraft] = useState(true);
   const [saving, setSaving] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
@@ -58,6 +60,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     setClaudePathDraft(effectiveClaudePath);
     setLang(settings.interface_language || i18n.language || "");
     setAppearanceModeDraft(savedAppearanceMode);
+    setAutoSyncDraft(Boolean(settings.auto_sync !== false));
     draftsHydratedRef.current = true;
   }, [
     open,
@@ -66,6 +69,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     effectiveCodexPath,
     effectiveClaudePath,
     settings.interface_language,
+    settings.auto_sync,
     savedAppearanceMode,
   ]);
 
@@ -77,6 +81,7 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       setClaudePathDraft("");
       setLang("");
       setAppearanceModeDraft("system");
+      setAutoSyncDraft(true);
       setAppearanceOpen(false);
       setLangOpen(false);
       draftsHydratedRef.current = false;
@@ -152,7 +157,8 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
   const claudePathDirty = claudePath.trim() !== effectiveClaudePath.trim();
   const langDirty = lang !== (settings.interface_language || currentLang || "");
   const appearanceModeDirty = appearanceMode !== savedAppearanceMode;
-  const dirty = codexPathDirty || claudePathDirty || langDirty || appearanceModeDirty;
+  const autoSyncDirty = autoSyncDraft !== Boolean(settings.auto_sync !== false);
+  const dirty = codexPathDirty || claudePathDirty || langDirty || appearanceModeDirty || autoSyncDirty;
 
   const handleSave = useCallback(async () => {
     const codexValue = codexPath.trim();
@@ -186,6 +192,9 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
       if (appearanceModeDirty) {
         await setAppearanceMode(appearanceMode);
       }
+      if (autoSyncDirty) {
+        await setAutoSync(autoSyncDraft);
+      }
       setAppearanceOpen(false);
       setLangOpen(false);
     } finally {
@@ -201,10 +210,13 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
     langDirty,
     appearanceMode,
     appearanceModeDirty,
+    autoSyncDraft,
+    autoSyncDirty,
     setCodexPath,
     setClaudePath,
     setInterfaceLanguage,
     setAppearanceMode,
+    setAutoSync,
     runIncrementalImport,
     defaultCodexHint,
     defaultClaudeHint,
@@ -243,9 +255,20 @@ export function SettingsPanel({ open, onClose }: SettingsPanelProps) {
               {activeTab === "general" && (
                 <>
                   <div className="mb-2">
-                    <p id="settings-general-title" className="text-sm font-medium text-foreground">
-                      {t("settings.sessionPaths")}
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p id="settings-general-title" className="text-sm font-medium text-foreground">
+                        {t("settings.sessionPaths")}
+                      </p>
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={autoSyncDraft}
+                          onChange={(e) => setAutoSyncDraft(e.target.checked)}
+                          className="w-4 h-4 rounded border-border text-primary focus:ring-ring/30"
+                        />
+                        <span className="text-sm text-foreground">{t("settings.autoSync")}</span>
+                      </label>
+                    </div>
                     <p className="text-xs text-muted-foreground mt-1">
                       {t("settings.subtitle")}
                     </p>

@@ -165,6 +165,11 @@ export function AppView() {
       return;
     }
     if (autoScanStartedRef.current) return;
+    // Skip auto-scan when the user has disabled it.
+    if (settings.auto_sync === false) {
+      autoScanStartedRef.current = true;
+      return;
+    }
     const targets = [
       effectiveCodexPath
         ? { platform: "codex_cli" as const, path: effectiveCodexPath }
@@ -179,6 +184,7 @@ export function AppView() {
     }
   }, [
     settingsInitialized,
+    settings.auto_sync,
     effectiveCodexPath,
     effectiveClaudePath,
     settingsLoad,

@@ -316,6 +316,7 @@ export async function mockInvoke<T = unknown>(cmd: string, args?: Record<string,
           default_codex_path: `${home}/.codex`,
           default_claude_path: `${home}/.claude`,
           active_platform: getActivePlatform(mockSettings),
+          auto_sync: (mockSettings as unknown as Record<string, string | undefined>).auto_sync !== "false",
         } as T;
       }
 

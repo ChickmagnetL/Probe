@@ -14,6 +14,9 @@ CODEX_PATH_KEY = "codex_path"
 CLAUDE_PATH_KEY = "claude_path"
 ACTIVE_PLATFORM_KEY = "active_platform"
 
+# Known boolean setting keys — stored as "true"/"false" strings, converted back on read.
+BOOLEAN_KEYS = {"auto_sync"}
+
 
 def default_codex_path() -> str | None:
     """Return the OS-default Codex CLI directory, or None if it cannot be inferred.
@@ -41,6 +44,9 @@ def handle_get(params: dict[str, Any]) -> dict[str, Any]:
     conn = get_connection()
     settings = settings_dao.get_all(conn)
     result: dict[str, Any] = dict(settings)
+    for key in BOOLEAN_KEYS:
+        if key in result:
+            result[key] = result[key] == "true"
     codex_default = default_codex_path()
     if codex_default:
         result["default_codex_path"] = codex_default

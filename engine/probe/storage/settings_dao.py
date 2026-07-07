@@ -19,6 +19,8 @@ def get(conn: sqlite3.Connection, key: str) -> str | None:
 
 
 def upsert(conn: sqlite3.Connection, key: str, value: Any) -> None:
+    if isinstance(value, bool):
+        value = "true" if value else "false"
     conn.execute(
         """INSERT INTO settings (key, value) VALUES (?, ?)
            ON CONFLICT(key) DO UPDATE SET value=excluded.value""",

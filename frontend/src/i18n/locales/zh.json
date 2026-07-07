@@ -154,6 +154,7 @@
     "title": "设置",
     "subtitle": "配置 Probe 扫描 Codex CLI 和 Claude Code 会话的路径。",
     "sessionPaths": "会话路径",
+    "autoSync": "自动同步",
     "codexPath": "Codex CLI 路径",
     "claudePath": "Claude Code 路径",
     "default": "默认：",

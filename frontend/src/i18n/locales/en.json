@@ -154,6 +154,7 @@
     "title": "Settings",
     "subtitle": "Configure where Probe scans for Codex CLI and Claude Code sessions.",
     "sessionPaths": "Session Paths",
+    "autoSync": "Auto Sync",
     "codexPath": "Codex CLI Path",
     "claudePath": "Claude Code Path",
     "default": "Default:",
