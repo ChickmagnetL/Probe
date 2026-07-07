@@ -173,8 +173,8 @@
     "browse": "浏览"
   },
   "platform": {
-    "codexCli": "Codex",
-    "claudeCode": "Claude",
+    "codexCli": "Codex CLI",
+    "claudeCode": "Claude Code",
     "switcherAria": "切换会话平台",
     "codexCliAria": "显示 Codex CLI 会话",
     "claudeCodeAria": "显示 Claude Code 会话"

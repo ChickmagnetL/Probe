@@ -173,8 +173,8 @@
     "browse": "Browse"
   },
   "platform": {
-    "codexCli": "Codex",
-    "claudeCode": "Claude",
+    "codexCli": "Codex CLI",
+    "claudeCode": "Claude Code",
     "switcherAria": "Switch session platform",
     "codexCliAria": "Show Codex CLI sessions",
     "claudeCodeAria": "Show Claude Code sessions"
