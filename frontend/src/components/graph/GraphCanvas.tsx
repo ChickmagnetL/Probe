@@ -201,6 +201,8 @@ export function GraphCanvas({
     const startTime = performance.now();
     const duration = 300;
 
+    let cancelled = false;
+
     function lerp(a: number, b: number, t: number): number {
       return a + (b - a) * t;
     }
@@ -210,6 +212,7 @@ export function GraphCanvas({
     }
 
     function animate(now: number) {
+      if (cancelled) return;
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const ease = easeOutCubic(progress);
@@ -227,6 +230,10 @@ export function GraphCanvas({
     }
 
     requestAnimationFrame(animate);
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedEventId]);
 
   // Labels don't need cache rebuild, just repaint

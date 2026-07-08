@@ -42,8 +42,14 @@ export function computeResetViewTransform(
   mainSessionId?: string,
 ): Transform {
   const node = firstMainUserInputNode(data, mainSessionId);
-  if (!node) return computeFitToGraphTransform(data, viewport);
-  return centerNodeTransform(node, viewport, RESET_VIEW_SCALE);
+  if (node) return centerNodeTransform(node, viewport, RESET_VIEW_SCALE);
+  // Fallback: center on the first visible node at a reasonable scale instead of
+  // fitting the entire graph (which can zoom way out for sub-agent sessions that
+  // lack a user_input anchor).
+  if (data.nodes.length > 0) {
+    return centerNodeTransform(data.nodes[0], viewport, RESET_VIEW_SCALE);
+  }
+  return computeFitToGraphTransform(data, viewport);
 }
 
 function firstMainUserInputNode(data: GraphData, mainSessionId?: string): GraphNode | undefined {

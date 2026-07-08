@@ -249,6 +249,11 @@ function PanelViewContent({ view }: PanelViewContentProps) {
         if (parentSessionId) {
           setExpanded(parentSessionId, true);
         }
+        // Don't call selectEvent when navigating to a different session. The
+        // event ID belongs to the source session's graph and doesn't exist in
+        // the target session — it would start a stale animation that overwrites
+        // the correct viewport transform once the target session loads.
+        return;
       }
       selectEvent(id);
     },
