@@ -52,6 +52,7 @@ export function AppView() {
     exitSelectionMode,
     selectAll,
     deleteSessions,
+    deleting,
     resetForPlatformChange,
   } = useSessionStore();
   const openImportModal = useImportStore((s) => s.openModal);
@@ -523,7 +524,9 @@ export function AppView() {
           title={t("delete.title")}
           message={t("delete.message_other", { count: selectedCount })}
           confirmLabel={t("delete.confirm")}
+          loadingLabel={t("delete.deleting")}
           confirmVariant="destructive"
+          loading={deleting}
           onCancel={() => {
             setDeleteDialogOpen(false);
             setDeleteFiles(false);

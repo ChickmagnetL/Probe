@@ -18,6 +18,7 @@
     "message_one": "Are you sure you want to delete {{count}} session? This action cannot be undone.",
     "message_other": "Are you sure you want to delete {{count}} sessions? This action cannot be undone.",
     "confirm": "Delete",
+    "deleting": "Deleting...",
     "alsoDeleteFiles": "Also delete original files",
     "deleteSelected": "Delete selected",
     "exitSelection": "Exit selection",

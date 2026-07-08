@@ -18,6 +18,7 @@
     "message_one": "确定要删除 {{count}} 个会话吗？此操作不可撤销。",
     "message_other": "确定要删除 {{count}} 个会话吗？此操作不可撤销。",
     "confirm": "删除",
+    "deleting": "删除中...",
     "alsoDeleteFiles": "同时删除原始文件",
     "deleteSelected": "删除所选",
     "exitSelection": "退出选择",

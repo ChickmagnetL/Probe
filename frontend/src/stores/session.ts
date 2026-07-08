@@ -58,6 +58,7 @@ interface SessionState {
   // Multi-select
   selectionMode: boolean;
   selectedIds: Set<string>;
+  deleting: boolean;
   toggleSelect: (id: string) => void;
   selectAll: () => void;
   clearSelection: () => void;
@@ -85,6 +86,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   expandedSessions: new Set<string>(),
   selectedIds: new Set(),
   selectionMode: false,
+  deleting: false,
 
   setExpanded: (sessionId, expanded) => {
     const { expandedSessions } = get();
@@ -182,6 +184,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (selectedIds.size === 0) return;
 
     const idsToDelete = Array.from(selectedIds);
+    set({ deleting: true });
     try {
       await invoke.deleteSessions(idsToDelete, deleteFiles);
       set({ selectedIds: new Set(), selectionMode: false });
@@ -193,6 +196,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       await fetchSessions();
     } catch (e) {
       set({ error: toIpcError(e) });
+    } finally {
+      set({ deleting: false });
     }
   },
 }));
