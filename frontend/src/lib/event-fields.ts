@@ -60,6 +60,17 @@ function computeCommandString(meta: Record<string, unknown>): string | undefined
   return undefined;
 }
 
+function parseMcpToolName(toolName: string): { server: string | null; tool: string | null } {
+  const parts = toolName.split("__");
+  if (parts.length < 3 || parts[0] !== "mcp") {
+    return { server: null, tool: null };
+  }
+  return {
+    server: parts[1] || null,
+    tool: parts.slice(2).join("__") || null,
+  };
+}
+
 /**
  * Parse a claude_code tool_call's stringified ``args`` (JSON) into an object.
  * Tool_call events carry the input fields (file_path/command/pattern/...) only
@@ -111,12 +122,16 @@ export function extractFields(
   const fields: EventField[] = [];
 
   // claude_code MCP tool_call: identity is the raw ``mcp__<server>__<tool>`` name.
-  // Switch can't pattern-match a prefix, so handle it before the switch. The
-  // Identity baseline already shows the full name, so only surface Server (when
-  // the engine has split it) and the bare Tool name when it adds information.
+  // Switch can't pattern-match a prefix, so handle it before the switch.
   if (eventType.startsWith("mcp__")) {
-    const server = stringOrNull(meta.server);
-    const toolName = stringOrNull(meta.tool_name) ?? stringOrNull(meta.name);
+    const parsedMcp = parseMcpToolName(eventType);
+    const explicitToolName = stringOrNull(meta.tool_name);
+    const server = stringOrNull(meta.server) ?? parsedMcp.server;
+    const toolName = (
+      explicitToolName && explicitToolName !== eventType
+        ? explicitToolName
+        : parsedMcp.tool
+    ) ?? stringOrNull(meta.name);
     if (server) fields.push({ key: "server", label: "Server", value: server });
     if (toolName && toolName !== eventType) fields.push({ key: "tool", label: "Tool", value: toolName });
     return fields;
@@ -375,9 +390,11 @@ export function extractFields(
     case "Bash": {
       const args = parseArgsObject(meta);
       const cmd = argsField(meta, args, "command");
+      const description = argsField(meta, args, "description");
       const exitCode = meta.exit_code;
       const status = stringOrNull(meta.status);
       if (cmd) fields.push({ key: "cmd", label: "Command", value: cmd });
+      if (description) fields.push({ key: "desc", label: "Description", value: truncate(description, 120) });
       if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
       if (status) fields.push({ key: "status", label: "Status", value: status });
       break;
@@ -395,8 +412,10 @@ export function extractFields(
     case "Write": {
       const args = parseArgsObject(meta);
       const filePath = argsField(meta, args, "file_path");
+      const content = stringOrNull(args?.content);
       const status = stringOrNull(meta.status);
       if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
+      if (content) fields.push({ key: "content", label: "Content", value: truncate(content, 80) });
       if (status) fields.push({ key: "status", label: "Status", value: status });
       break;
     }
@@ -404,9 +423,11 @@ export function extractFields(
     case "MultiEdit": {
       const args = parseArgsObject(meta);
       const filePath = argsField(meta, args, "file_path");
-      const changes = meta.changes as unknown[] | undefined;
+      const editCount = Array.isArray(meta.changes)
+        ? meta.changes.length
+        : Array.isArray(args?.edits) ? args.edits.length : undefined;
       if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
-      if (changes) fields.push({ key: "changes", label: "Changes", value: `${changes.length} edits` });
+      if (editCount !== undefined) fields.push({ key: "changes", label: "Changes", value: `${editCount} edits` });
       break;
     }
 
@@ -429,7 +450,9 @@ export function extractFields(
     case "Glob": {
       const args = parseArgsObject(meta);
       const pattern = argsField(meta, args, "pattern");
+      const path = argsField(meta, args, "path");
       if (pattern) fields.push({ key: "pattern", label: "Pattern", value: pattern });
+      if (path) fields.push({ key: "path", label: "Path", value: path });
       break;
     }
 
@@ -438,8 +461,10 @@ export function extractFields(
       const args = parseArgsObject(meta);
       const subagentType = argsField(meta, args, "subagent_type");
       const description = argsField(meta, args, "description");
+      const prompt = argsField(meta, args, "prompt");
       if (subagentType) fields.push({ key: "subagent", label: "Subagent", value: subagentType });
       if (description) fields.push({ key: "desc", label: "Description", value: truncate(description, 120) });
+      if (prompt) fields.push({ key: "prompt", label: "Prompt", value: truncate(prompt, 120) });
       break;
     }
 
@@ -459,26 +484,40 @@ export function extractFields(
 
     case "TodoWrite": {
       const args = parseArgsObject(meta);
-      const todos = args?.todos as unknown[] | undefined;
-      if (todos) fields.push({ key: "todos", label: "Todos", value: String(todos.length) });
+      if (Array.isArray(args?.todos)) fields.push({ key: "todos", label: "Todos", value: String(args.todos.length) });
       break;
     }
 
     case "tool_result": {
       const status = stringOrNull(meta.status);
+      const rawToolName = stringOrNull(meta.tool_name) ?? stringOrNull(meta.name);
+      const parsedMcp = rawToolName?.startsWith("mcp__")
+        ? parseMcpToolName(rawToolName)
+        : { server: null, tool: null };
+      const toolName = parsedMcp.tool ?? rawToolName;
+      const server = stringOrNull(meta.server) ?? parsedMcp.server;
       const filePath = stringOrNull(meta.file_path);
+      const query = stringOrNull(meta.query);
       const exitCode = meta.exit_code;
       const stdout = stringOrNull(meta.stdout);
-      if (typeof meta.is_error === "boolean") fields.push({ key: "err", label: "Error", value: String(meta.is_error) });
+      const stderr = stringOrNull(meta.stderr);
+      const content = stringOrNull(meta.content);
+      if (toolName) fields.push({ key: "tool", label: "Tool", value: toolName });
+      if (server) fields.push({ key: "server", label: "Server", value: server });
+      if (status) fields.push({ key: "status", label: "Status", value: status });
+      if (!status && meta.is_error === true) fields.push({ key: "err", label: "Error", value: "true" });
       if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
       if (stdout) fields.push({ key: "stdout", label: "Output", value: truncate(stdout, 80) });
+      if (stderr) fields.push({ key: "stderr", label: "Error Output", value: truncate(stderr, 80) });
+      if (!stdout && !stderr && content) fields.push({ key: "content", label: toolName === "Write" ? "Content" : "Output", value: truncate(content, 80) });
       if (filePath) fields.push({ key: "path", label: "Path", value: filePath });
-      if (status) fields.push({ key: "status", label: "Status", value: status });
+      if (query) fields.push({ key: "query", label: "Query", value: query });
       break;
     }
 
     case "text": {
-      const contentPreview = stringOrNull(meta.input_content_text);
+      const contentPreview = stringOrNull(meta.input_content_text)
+        ?? (stringOrNull(meta.claude_event_type) ? stringOrNull(meta.content) : null);
       const stopReason = stringOrNull(meta.stop_reason);
       if (contentPreview) fields.push({ key: "content", label: "Content", value: truncate(contentPreview, 80) });
       if (stopReason) fields.push({ key: "stop", label: "Stop Reason", value: stopReason });
@@ -486,7 +525,8 @@ export function extractFields(
     }
 
     case "thinking": {
-      const contentPreview = stringOrNull(meta.input_content_text);
+      const contentPreview = stringOrNull(meta.input_content_text)
+        ?? (stringOrNull(meta.claude_event_type) ? stringOrNull(meta.content) : null);
       if (contentPreview) fields.push({ key: "content", label: "Thinking", value: truncate(contentPreview, 80) });
       break;
     }
@@ -495,16 +535,24 @@ export function extractFields(
       const msg = stringOrNull(meta.message);
       const errType = stringOrNull(meta.error_type);
       const retryAttempt = meta.retry_attempt;
+      const maxRetries = meta.max_retries;
       if (msg) fields.push({ key: "msg", label: "Message", value: msg });
       if (errType) fields.push({ key: "type", label: "Type", value: errType });
-      if (typeof retryAttempt === "number") fields.push({ key: "retry", label: "Retry", value: String(retryAttempt) });
+      if (typeof retryAttempt === "number") {
+        const retry = typeof maxRetries === "number"
+          ? `${retryAttempt}/${maxRetries}`
+          : String(retryAttempt);
+        fields.push({ key: "retry", label: "Retry", value: retry });
+      }
       break;
     }
 
     case "compact_boundary": {
+      const summary = stringOrNull(meta.summary);
       const preTokens = meta.original_token_count;
       const postTokens = meta.compacted_token_count;
       const trigger = stringOrNull(meta.trigger);
+      if (summary) fields.push({ key: "summary", label: "Summary", value: truncate(summary, 120) });
       if (typeof preTokens === "number") fields.push({ key: "pre", label: "Pre Tokens", value: formatNumber(preTokens) });
       if (typeof postTokens === "number") fields.push({ key: "post", label: "Post Tokens", value: formatNumber(postTokens) });
       if (trigger) fields.push({ key: "trigger", label: "Trigger", value: trigger });
@@ -518,11 +566,13 @@ export function extractFields(
     }
 
     case "stop_hook_summary": {
+      const message = stringOrNull(meta.message);
       const stopReason = stringOrNull(meta.stop_reason);
       const hookCount = meta.hook_count;
       const prevented = meta.prevented_continuation;
       const durMs = meta.duration_ms as number | undefined;
-      if (stopReason) fields.push({ key: "stop", label: "Stop Reason", value: stopReason });
+      if (message) fields.push({ key: "message", label: "Message", value: truncate(message, 120) });
+      if (stopReason && stopReason !== message) fields.push({ key: "stop", label: "Stop Reason", value: stopReason });
       if (typeof hookCount === "number") fields.push({ key: "hooks", label: "Hooks", value: String(hookCount) });
       if (typeof prevented === "boolean") fields.push({ key: "prevented", label: "Prevented Continuation", value: String(prevented) });
       if (durMs !== undefined) fields.push({ key: "dur", label: "Duration", value: formatDuration(durMs) });
@@ -536,12 +586,16 @@ export function extractFields(
       const status = stringOrNull(meta.status);
       const decision = stringOrNull(meta.decision);
       const message = stringOrNull(meta.message);
+      const stdout = stringOrNull(meta.stdout);
+      const stderr = stringOrNull(meta.stderr);
       const exitCode = meta.exit_code;
       const durMs = meta.duration_ms as number | undefined;
       if (hookName) fields.push({ key: "name", label: "Name", value: hookName });
       if (status) fields.push({ key: "status", label: "Status", value: status });
       if (decision) fields.push({ key: "decision", label: "Decision", value: decision });
       if (message) fields.push({ key: "message", label: "Message", value: truncate(message, 120) });
+      if (stdout) fields.push({ key: "stdout", label: "Output", value: truncate(stdout, 80) });
+      if (stderr) fields.push({ key: "stderr", label: "Error Output", value: truncate(stderr, 80) });
       if (command) fields.push({ key: "cmd", label: "Command", value: command });
       if (hookType) fields.push({ key: "type", label: "Type", value: hookType });
       if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
@@ -580,10 +634,20 @@ export function extractFields(
     }
 
     case "queue_operation": {
+      const operation = stringOrNull(meta.queue_operation);
+      const content = stringOrNull(meta.content);
+      if (operation) fields.push({ key: "operation", label: "Operation", value: operation });
+      if (content) fields.push({ key: "prompt", label: "Prompt", value: truncate(content, 120) });
       break;
     }
 
     case "local_command": {
+      const command = computeCommandString(meta) ?? stringOrNull(meta.content);
+      const exitCode = meta.exit_code;
+      const status = stringOrNull(meta.status);
+      if (command) fields.push({ key: "cmd", label: "Command", value: command });
+      if (typeof exitCode === "number") fields.push({ key: "exit", label: "Exit Code", value: String(exitCode) });
+      if (status) fields.push({ key: "status", label: "Status", value: status });
       break;
     }
 

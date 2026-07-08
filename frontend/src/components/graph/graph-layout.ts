@@ -1,4 +1,5 @@
 import { kindColor } from "../../lib/color";
+import { filterGraphVisibleEvents } from "../../lib/event-visibility";
 import { eventTypeLabel } from "./graph-labels";
 
 // ── Interfaces ──────────────────────────────────────────
@@ -975,8 +976,7 @@ export function buildTurnsFromEvents(events: RawEvent[]): GraphTurn[] {
   }
 
   // Sort by timestamp first
-  const sorted = [...events]
-    .filter((event) => !shouldHideGraphEvent(event))
+  const sorted = filterGraphVisibleEvents(events)
     .sort((a, b) => {
     if (!a.timestamp && !b.timestamp) return (a.source_line_no ?? 0) - (b.source_line_no ?? 0);
     if (!a.timestamp) return 1;
@@ -1054,13 +1054,6 @@ function isMainUserInput(ev: RawEvent): boolean {
 
 function hasAssistantOutput(events: RawEvent[]): boolean {
   return events.some((event) => event.kind === "assistant_output");
-}
-
-function shouldHideGraphEvent(ev: RawEvent): boolean {
-  const rawMeta = typeof ev.metadata === "string"
-    ? (() => { try { return JSON.parse(ev.metadata); } catch { return null; } })()
-    : isRecord(ev.metadata) ? ev.metadata : null;
-  return rawMeta?.graph_hidden === true;
 }
 
 function toTurnEvent(ev: RawEvent): TurnEvent {
