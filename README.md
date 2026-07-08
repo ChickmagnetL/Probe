@@ -68,7 +68,7 @@ https://github.com/user-attachments/assets/df564ce2-fa9c-4d70-acca-425f287938ad
 按项目、按日期组织会话，支持搜索、排序，会话详情带缓存秒开。
 
 <p align="center">
-  <img src="./assets/session.png" alt="多会话管理" width="50%">
+  <img src="./assets/session.png" alt="多会话管理" width="20%">
 </p>
 
 **分屏对照**
@@ -161,7 +161,7 @@ cd tauri && cargo tauri dev
 
 ## 许可证
 
-MIT
+[MIT](./LICENSE)
 
 ## 致谢
 

@@ -68,8 +68,9 @@ The original `.jsonl` file, pretty-printed as JSON for easier inspection of the 
 Sessions organized by project and date, with search and sorting. Session details are cached for instant access.
 
 <p align="center">
-  <img src="./assets/session.png" alt="Multi-session management" width="50%">
+  <img src="./assets/session.png" alt="Multi-session management" width="20%">
 </p>
+
 
 **Split view**
 Split into up to four panes to preview and compare four different views at once. Click a node in one view, and the others jump to follow.
@@ -161,7 +162,7 @@ See [`docs/architecture.md`](./docs/architecture.md) for the full development gu
 
 ## License
 
-MIT
+[MIT](./LICENSE)
 
 ## Acknowledgements
 
