@@ -1,8 +1,15 @@
 <p align="center">
-  <img src="./assets/icons/probe-logo-black-on-white.svg" alt="Probe" width="120">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/icons/probe-logo-white-on-black.svg">
+    <img src="./assets/icons/probe-logo-black-on-white.svg" alt="Probe" width="120">
+  </picture>
 </p>
 
 <h1 align="center">Probe</h1>
+
+<p align="center">
+  <a href="./README_EN.md">English</a> | 中文
+</p>
 
 <p align="center">
   给 AI 编程助手的会话日志，一个可读的家。<br/>
@@ -26,18 +33,18 @@
 - 这一轮对话花了多少 token？卡在哪一步？
 - 子代理（subagent）是怎么被调度、又返回了什么？
 
-**Probe 把这些日志变成可以浏览、搜索、回看的界面。** 不用再翻 JSON。
+**Probe 把这些日志变成可以浏览、搜索、回看的界面。** 
 
 ## 功能演示
 
-![Probe 功能演示](./assets/demo.mp4)
+https://github.com/user-attachments/assets/df564ce2-fa9c-4d70-acca-425f287938ad
 
 ## 核心功能
 
 **多平台会话导入**
 目前支持 Codex CLI 与 Claude Code 。单文件、整个目录、或自动扫描增量导入都可以。
 
-**对话流图（Graph）**
+**节点视图（Graph）**
 用节点图展示一轮对话的完整走向——用户输入、模型回复、工具调用、命令执行、子代理派生，一眼看清整条链路。节点类型可按需筛选。
 
 ![对话流图 Graph 视图](./assets/graph.png)
@@ -60,7 +67,9 @@
 **多会话管理**
 按项目、按日期组织会话，支持搜索、排序，会话详情带缓存秒开。
 
-![多会话管理](./assets/session.png)
+<p align="center">
+  <img src="./assets/session.png" alt="多会话管理" width="50%">
+</p>
 
 **分屏对照**
 支持最多拆分四个分屏，同时预览、对照四个不同的视图，对一个视图中的节点点击时，其他视图也会随之跳转。
@@ -135,9 +144,18 @@ Probe 是一个 Tauri v2 桌面应用，由三层组成：
 ```bash
 git clone https://github.com/ChickmagnetL/Probe.git
 cd Probe
-# 启动前端开发服务器
-cd frontend && npm install && npm run dev
+
+# 1. 构建前端依赖
+cd frontend && npm install && cd ..
+
+# 2. 构建后端 Python engine sidecar（需要 Python ≥ 3.10 与 pyinstaller）
+./build.sh sidecar
+
+# 3. 启动桌面开发模式（同时拉起前端、Rust shell 与 engine）
+cd tauri && cargo tauri dev
 ```
+
+前置依赖：Node.js、Rust（含 Tauri CLI）、Python ≥ 3.10 与 `pyinstaller`。
 
 完整开发说明见 [`docs/architecture.md`](./docs/architecture.md)。
 
