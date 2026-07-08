@@ -1,68 +1,150 @@
-# Probe
+<p align="center">
+  <img src="./assets/icons/probe-logo-black-on-white.svg" alt="Probe" width="120">
+</p>
 
-AI 驱动的代码库分析工具。导入 Codex CLI、Claude Code 等 AI 工具的会话日志，通过可视化界面浏览分析结果。
+<h1 align="center">Probe</h1>
 
-## 它能做什么
+<p align="center">
+  给 AI 编程助手的会话日志，一个可读的家。<br/>
+  导入 Codex CLI、Claude Code 的会话记录，用可视化界面回看每一次交互。
+</p>
 
-- **导入 AI 工具会话**：支持单文件、目录导入，自动扫描增量导入。当前支持 Codex CLI，后续将加入 Claude Code 等更多工具
-- **对话树视图**：可视化展示 Codex 与模型的交互流程和 token 消耗
-- **时间线视图**：按事件序列浏览会话中的每一步操作
-- **对话视图**：以对话形式查看 Codex 与模型的完整交互内容
-- **原始数据视图**：查看会话的底层 JSON 结构与字段详情
-- **多会话管理**：按日期 / 项目组织会话列表，LRU 缓存详情
-- **搜索与设置**：会话搜索、语言切换（中/英）、应用自动更新
+<p align="center">
+  <a href="https://github.com/ChickmagnetL/Probe/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/ChickmagnetL/Probe?style=flat-square"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-4A4A55?style=flat-square">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-green?style=flat-square">
+  <img alt="Built with Tauri" src="https://img.shields.io/badge/built%20with-Tauri%20v2-orange?style=flat-square">
+</p>
 
-<!-- TODO: 替换为实际截图/GIF -->
-![Probe 界面截图](./assets/screenshot.png)
+---
+
+## 为什么需要 Probe
+
+你每天都在用 Codex CLI、Claude Code 这类 AI 编程助手。它们在 `~/.codex`、`~/.claude` 下留下大量 `.jsonl` 会话日志——但每次想回头看，都要面对几万行的原始 JSON：
+
+- 上次让 AI 改的那个 bug，它具体做了什么？调用过哪些工具？
+- 这一轮对话花了多少 token？卡在哪一步？
+- 子代理（subagent）是怎么被调度、又返回了什么？
+
+**Probe 把这些日志变成可以浏览、搜索、回看的界面。** 不用再翻 JSON。
+
+## 功能演示
+
+![Probe 功能演示](./assets/demo.mp4)
+
+## 核心功能
+
+**多平台会话导入**
+目前支持 Codex CLI 与 Claude Code 。单文件、整个目录、或自动扫描增量导入都可以。
+
+**对话流图（Graph）**
+用节点图展示一轮对话的完整走向——用户输入、模型回复、工具调用、命令执行、子代理派生，一眼看清整条链路。节点类型可按需筛选。
+
+![对话流图 Graph 视图](./assets/graph.png)
+
+**时间线（Timeline）**
+按事件发生顺序逐条浏览，定位到任意一步操作。
+
+![时间线 Timeline 视图](./assets/timeline.png)
+
+**对话视图（Chat）**
+以熟悉的聊天界面查看模型与用户的完整交互内容。
+
+![对话视图 Chat](./assets/chat.png)
+
+**原始数据（Raw）**
+原始 jsonl 文件转换成 json 排版，更方便观察原始数据。
+
+![原始数据 Raw 视图](./assets/raw.png)
+
+**多会话管理**
+按项目、按日期组织会话，支持搜索、排序，会话详情带缓存秒开。
+
+![多会话管理](./assets/session.png)
+
+**分屏对照**
+支持最多拆分四个分屏，同时预览、对照四个不同的视图，对一个视图中的节点点击时，其他视图也会随之跳转。
+
+![分屏对照](./assets/split-screen.png)
+
+---
 
 ## 安装
 
 ### macOS
 
-**方式一：Homebrew Cask（推荐）**
+**方式一：Homebrew（推荐）**
 
 ```bash
 brew install ChickmagnetL/probe/probe
 ```
 
-通过 Homebrew 安装的应用不带 macOS Gatekeeper 隔离属性，可直接打开使用。
+Homebrew 安装的版本已剥离 Gatekeeper 隔离属性，装完直接能开。
 
-升级时运行：
+升级 / 卸载：
 
 ```bash
 brew upgrade probe
-```
-
-卸载：
-
-```bash
 brew uninstall probe
 ```
 
 **方式二：GitHub Release DMG**
 
-从 [最新 Release](https://github.com/ChickmagnetL/Probe/releases/latest/download/Probe_aarch64.dmg) 下载 `.dmg` 文件：
+从 [最新 Release](https://github.com/ChickmagnetL/Probe/releases/latest/download/Probe_aarch64.dmg) 下载 `.dmg`：
 
-1. 打开 DMG，将 `Probe.app` 拖入 `/Applications`
-2. 首次打开时，macOS 可能提示"应用已损坏"（Gatekeeper 限制）
-3. 在终端运行以下命令修复：
+1. 打开 DMG，把 `Probe.app` 拖进 `/Applications`
+2. 首次打开若提示"应用已损坏"，是 Gatekeeper 拦截，终端跑一下：
    ```bash
    xattr -cr /Applications/Probe.app
    ```
-4. 之后即可正常打开
+3. 再次打开即可
 
 ### Windows
 
 从 [最新 Release](https://github.com/ChickmagnetL/Probe/releases/latest/download/Probe_x64-setup.exe) 下载 `.exe` 安装包。
 
-## 文档
+---
 
-技术文档见 [docs/](./docs/) 目录。
+## 快速上手
 
-## 开发
+1. 选择导入自己想查阅的单个会话文件，或者全部会话文件的文件夹，亦或者等待应用自动同步电脑上的 Codex CLI 和 Claude Code 会话。 
+2. 会话导入完成后，右侧栏中点击会话列表开始预览。
 
-开发指南见 [CLAUDE.md](./CLAUDE.md)。
+---
+
+## 技术栈
+
+Probe 是一个 Tauri v2 桌面应用，由三层组成：
+
+| 层 | 技术 | 职责 |
+|----|------|------|
+| Engine | Python | 解析 JSONL、持久化到 SQLite、响应查询 |
+| Shell | Rust / Tauri v2 | 原生窗口、IPC 分发、管理 engine 子进程 |
+| UI | React + TypeScript + Tailwind | 可视化界面、交互、本地状态 |
+
+更详细的技术文档见 [`docs/`](./docs/)。
+
+---
+
+## 参与贡献
+
+欢迎提 Issue 反馈 bug、建议新功能，或直接发 PR。
+
+本地开发：
+
+```bash
+git clone https://github.com/ChickmagnetL/Probe.git
+cd Probe
+# 启动前端开发服务器
+cd frontend && npm install && npm run dev
+```
+
+完整开发说明见 [`docs/architecture.md`](./docs/architecture.md)。
 
 ## 许可证
 
 MIT
+
+## 致谢
+
+[Linux.Do](https://linux.do/) 社区

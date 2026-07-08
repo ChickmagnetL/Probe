@@ -55,3 +55,9 @@ AGENTS.md
 CLAUDE.md
 .ace-tool/
 .test_tools/
+
+# Git worktrees (local parallel branches)
+.worktrees/
+
+# README demo video — hosted via GitHub user-images URL instead of committed
+assets/*.mp4
