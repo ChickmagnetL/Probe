@@ -55,3 +55,6 @@ AGENTS.md
 CLAUDE.md
 .ace-tool/
 .test_tools/
+
+# Git worktrees (local parallel branches)
+.worktrees/
